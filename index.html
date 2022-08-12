@@ -1,49 +1,80 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <title>Star's Homepage</title>
-    <style>
-ul {
-  list-style-type: none;
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  background-color: #333;
-  position: -webkit-sticky; /* Safari */
-  position: sticky;
-  top: 0;
-}
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, user-scalable=no">
+  <title>Star's Homepage</title>
+  <style>
+    ul {
+      list-style-type: none;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #333;
+      position: -webkit-sticky;
+      /* Safari */
+      position: sticky;
+      top: 0;
+    }
 
-li {
-  float: left;
-}
+    li {
+      float: left;
+    }
 
-li a {
-  display: block;
-  color: white;
-  text-align: center;
-  padding: 14px 16px;
-  text-decoration: none;
-}
+    li a {
+      display: block;
+      color: white;
+      text-align: center;
+      padding: 14px 16px;
+      text-decoration: none;
+    }
 
-li a:hover {
-  background-color: #111;
-}
+    li a:hover:not(.active) {
+      background-color: lightblue;
+    }
 
-.active {
-  background-color: #4CAF50;
-}
-    </style>
-  </head>
-  <body>
-    <ul>
-      <li>
-        <a>Home</a>
-      </li>
-      <li>
-        <a>Works</a>
-      </li>
-    </ul>
-    <p>There is nothing here, I just rushed this page in class</p>
-  </body>
+    .active {
+      background-color: mediumturquoise;
+    }
+
+    .hidden {
+      display: none;
+    }
+  </style>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script>
+    $(() => {
+      $("ul li a").on('click', (ev) => {
+        $("div").addClass("hidden");
+        $("#" + $(ev.target).html()).removeClass("hidden");
+        $("li a").removeClass("active");
+        $(ev.target).addClass("active");
+      })
+    });
+  </script>
+</head>
+
+<body>
+  <ul>
+    <li>
+      <a class="active">Home</a>
+    </li>
+    <li>
+      <a>Works</a>
+    </li>
+    <li>
+      <a href="https://www.juhsd.net/whs">Westmoor</a>
+    </li>
+  </ul>
+  <div id="Home">
+    <p>Thanks for visiting my homepage, though there is nothing here yet.</p>
+  </div>
+  <div id="Works" class="hidden">
+    <p>There isn't any works here.</p>
+  </div>
+  <div id="Westmoor" class="hidden">
+    <p>Please wait. Redirecting...</p>
+  </div>
+</body>
+
 </html>
