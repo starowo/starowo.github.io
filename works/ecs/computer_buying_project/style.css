@@ -1,0 +1,17 @@
+.back {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+}
+.fullscreen {
+    position: absolute;
+    top: 40px;
+    left: 20px;
+}
+html {
+    background-color: aliceblue;
+}
+.slide {
+    height: 100%;
+    width: 100%;
+}

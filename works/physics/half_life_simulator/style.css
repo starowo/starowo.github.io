@@ -1,0 +1,19 @@
+.back {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+}
+.fullscreen {
+    position: absolute;
+    top: 40px;
+    left: 20px;
+}
+html {
+    background-color: aliceblue;
+}
+canvas {
+    border: 1px solid black;
+}
+.division {
+    margin-top: 60px;
+}

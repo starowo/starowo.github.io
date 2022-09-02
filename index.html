@@ -4,54 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, user-scalable=no">
   <title>Star's Homepage</title>
-  <style>
-    ul {
-      list-style-type: none;
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
-      background-color: #333;
-      position: -webkit-sticky;
-      /* Safari */
-      position: sticky;
-      top: 0;
-    }
-
-    li {
-      float: left;
-    }
-
-    li a {
-      display: block;
-      color: white;
-      text-align: center;
-      padding: 14px 16px;
-      text-decoration: none;
-    }
-
-    li a:hover:not(.active) {
-      background-color: lightblue;
-    }
-
-    .active {
-      background-color: mediumturquoise;
-    }
-
-    .hidden {
-      display: none;
-    }
-  </style>
+  <link href="./style.css" type="text/css" rel="stylesheet">
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-  <script>
-    $(() => {
-      $("ul li a").on('click', (ev) => {
-        $("div").addClass("hidden");
-        $("#" + $(ev.target).html()).removeClass("hidden");
-        $("li a").removeClass("active");
-        $(ev.target).addClass("active");
-      })
-    });
-  </script>
+  <script src="./script.js"></script>
 </head>
 
 <body>
@@ -70,7 +25,11 @@
     <p>Thanks for visiting my homepage, though there is nothing here yet.</p>
   </div>
   <div id="Works" class="hidden">
-    <p>There isn't any works here.</p>
+    <p>Exploring Computer Science</p>
+    <a href="https://docs.google.com/presentation/d/1rNK29C74oHcIgYou6c3aDeZl_HjqQv7U3l51jX64UIw/edit?usp=sharing">Computer Buying Project</a>  
+    <p>Physics</p>
+    <a href="./works/physics/poster/index.html">Poster</a><br>
+    <a href="./works/physics/half_life_simulator/index.html">Half Life Simulator</a>
   </div>
   <div id="Westmoor" class="hidden">
     <p>Please wait. Redirecting...</p>
