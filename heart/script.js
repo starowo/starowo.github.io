@@ -4,8 +4,8 @@ class Particle {
         this.y = y;
         this.life = life;
         this.motion = Math.random() * 0.5/ life;
-        this.mX = x * this.motion;
-        this.mY = y * this.motion;
+        this.mX = x * this.motion * (Math.random * 0.5 + 0.5);
+        this.mY = y * this.motion * (Math.random * 0.5 + 0.5);;
         this.age = 0;
     }
     update(time) {
