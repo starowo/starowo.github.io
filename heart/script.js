@@ -3,14 +3,16 @@ class Particle {
         this.x = x;
         this.y = y;
         this.life = life;
-        this.motion = Math.random() * 0.5/ life;
-        this.mX = x * this.motion * (Math.random * 0.5 + 0.5);
-        this.mY = y * this.motion * (Math.random * 0.5 + 0.5);;
+        this.motion = Math.random() * 0.7/ life;
+        this.mX = x * this.motion * (Math.random() * 0.5 + 0.5);
+        this.mY = y * this.motion * (Math.random() * 0.5 + 0.5);;
         this.age = 0;
+        this.travelled = 0;
     }
     update(time) {
         this.age += time;
-        this.x -= this.mX * time;
+        this.travelled += Math.sqrt(this.mX * time * this.mX * time + this.mY * time * this.mY * time);
+        this.x -= this.mX * time
         this.y -= this.mY * time;
     }
 }
@@ -24,8 +26,8 @@ $(() => {
         ctx.clearRect(0, 0, 512, 512);
         ctx.fillStyle = "white";
         ctx.fillRect(0, 0, 512, 512);
-        ctx.fillStyle = "pink";
-        const flag = particles.length < 3600;
+        ctx.fillStyle = rgbToHex(255, 64, 64);
+        const flag = particles.length < 4800;
         for(let t = 0; t < 360; t += 1) {
             const coord = heart(t / 180 * Math.PI);
             ctx.beginPath();
@@ -41,13 +43,16 @@ $(() => {
         let t1 = t - time;
         time = t;
         for(let i = particles.length - 1; i >= 0; i--) {
-            if(particles[i].age >= particles[i].life) {
+            const particle = particles[i];
+            if(particle.age >= particle.life) {
                 particles.splice(i, 1);
                 continue;
             }
             particles[i].update(t1);
+            const clr = Math.min(255, Math.floor(64 + particle.travelled * 3));
+            ctx.fillStyle = rgbToHex(255, clr, clr);
             ctx.beginPath();
-            ctx.arc(256 + particles[i].x, 256 - particles[i].y, 1, 0, 2 * Math.PI);
+            ctx.arc(256 + particle.x, 256 - particle.y, 1, 0, 2 * Math.PI);
             //ctx.fillRect(256 + particles[i].x, 256 - particles[i].y, 1, 1);
             ctx.fill();
             ctx.closePath();
@@ -62,3 +67,12 @@ $(() => {
     }
 
 });
+
+function componentToHex(c) {
+    var hex = c.toString(16);
+    return hex.length == 1 ? "0" + hex : hex;
+  }
+
+function rgbToHex(r, g, b) {
+    return "#" + componentToHex(r) + componentToHex(g) + componentToHex(b);
+}
