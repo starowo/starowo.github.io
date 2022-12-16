@@ -24,14 +24,14 @@ $(() => {
     draw();
     function draw() {
         ctx.clearRect(0, 0, 512, 512);
-        ctx.fillStyle = "white";
+        ctx.fillStyle = "black";
         ctx.fillRect(0, 0, 512, 512);
-        ctx.fillStyle = rgbToHex(255, 64, 64);
+        ctx.fillStyle = rgbToHex(255, 140, 170);
         const flag = particles.length < 4800;
         for(let t = 0; t < 360; t += 1) {
             const coord = heart(t / 180 * Math.PI);
             ctx.beginPath();
-            ctx.arc(256 + coord[0], 256 - coord[1], 1, 0, 2 * Math.PI);
+            ctx.arc(256 + coord[0], 256 - coord[1], 2, 0, 2 * Math.PI);
             //ctx.fillRect(256 + particles[i].x, 256 - particles[i].y, 1, 1);
             ctx.fill();
             ctx.closePath();
@@ -49,7 +49,7 @@ $(() => {
                 continue;
             }
             particles[i].update(t1);
-            const clr = Math.min(255, Math.floor(64 + particle.travelled * 3));
+            const clr = Math.min(255, Math.floor(160 - particle.travelled * 3));
             ctx.fillStyle = rgbToHex(255, clr, clr);
             ctx.beginPath();
             ctx.arc(256 + particle.x, 256 - particle.y, 1, 0, 2 * Math.PI);
