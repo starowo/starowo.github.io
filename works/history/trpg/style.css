@@ -16,6 +16,7 @@ html {
 .character {
     flex: 1;
     text-align: center;
+    border: 1px solid black;
 }
 
 .character img {
@@ -23,7 +24,7 @@ html {
 }
 
 .character p {
-    font-size: 20px;
+    font-size: medium;
     margin: 10px 0;
 }
 
@@ -32,4 +33,19 @@ html {
     flex: 1;
     border: 1px solid black;
     height: 80%;
+}
+
+#content {
+    border: 1px solid black;
+    height: 70%;
+}
+
+#options {
+    display: grid;
+    grid-template-rows: repeat(2, 1fr);
+    grid-template-columns: repeat(2, 1fr);
+}
+
+#options button{
+    height: 12vh;
 }
