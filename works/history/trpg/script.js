@@ -799,6 +799,7 @@ $(() => {
             let dmg = 0;
             while(n > 0) {
                 dmg += Math.floor(Math.random() * 20 + 30 - Math.random() * 30);
+                n--;
             }
             positionhp -= dmg;
             if(dmg > 0)
