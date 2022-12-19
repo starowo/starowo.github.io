@@ -1193,7 +1193,7 @@ $(() => {
             round++;
             step = -1;
             if(Math.random() < 0.55) {
-                present(new GameEvent("Nothing special happened.", [new EventOption("next", () => {
+                present(new GameEvent("<p>Nothing special happened.</p>", [new EventOption("next", () => {
                     return true;
                 })]));
                 return;
