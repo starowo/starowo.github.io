@@ -140,7 +140,7 @@ $(() => {
         window.open("https://docs.google.com/document/d/1JcRICqdhAVGvFm9xWs9t6Iyg-ObLN5x5ZpxIzJuceEg");;
         window.open("https://docs.google.com/document/d/15of1c4SFS_MKXfizLQt3ZyfRC0aUiBx5y7wFVEeOB68");
         window.open("https://docs.google.com/document/d/1ZBiQYHPF2s_wEZOfg_HDb5TjYrK7gorutPfDoc0K0Y0");
-        alert("don't block the pop-up !!! It's the character sheets!! If you already did try unblock and refresh")
+        alert("don't block the pop-up !!! It's the character sheets!! If you already did try unblock and refresh.\n\nThere might be some parameters different from the character sheets. Because I keep updating it for better balance.")
         return false;
     }), null, null, null]));
 
@@ -153,12 +153,12 @@ $(() => {
         $("#sun").html(surgeon.name);
         eventEnemy = new GameEvent("<p>A group of Confederate soldiers are trying to advance our position</p>", [new EventOption("roll a dice", () => {
             const random = Math.floor(Math.random() * round / 2) + 1;
-            alert("plz put " + random + " enemy soldiers on enemy's side on the gameboard");
+            alert("The dice rolled "+random+", plz put " + random + " enemy soldiers on enemy's side on the gameboard");
             return true;
         }), null, null, null]);
         eventScout1 = new GameEvent("<p>Scout(" + scout.name + "):</p><p>You can roll a dice to move.</p>", [new EventOption("roll a dice", () => {
             const random = Math.floor(Math.random() * 4) + 3;
-            alert("You can move up to " + random + " cells on the board. (Can be less than it).");
+            alert("The dice rolled "+random+", You can move up to " + random + " cells on the board. (Can be less than it).");
             return true;
         }), new EventOption("open the merits store", () => {
             openStore(scout);
@@ -336,7 +336,7 @@ $(() => {
         })]);
         eventSoldier11 = new GameEvent("<p>Soldier(" + soldier1.name + "):</p><p>You can roll a dice to move.</p>", [new EventOption("roll a dice", () => {
             const random = Math.floor(Math.random() * 3) + 2;
-            alert("You can move up to " + random + " cells on the board. (Can be less than it).");
+            alert("The dice rolled "+random+", You can move up to " + random + " cells on the board. (Can be less than it).");
             return true;
         }), new EventOption("open the merits store", () => {
             openStore(soldier1);
@@ -505,7 +505,7 @@ $(() => {
         })]);
         eventSoldier21 = new GameEvent("<p>Soldier(" + soldier2.name + "):</p><p>You can roll a dice to move.</p>", [new EventOption("roll a dice", () => {
             const random = Math.floor(Math.random() * 3) + 2;
-            alert("You can move up to " + random + " cells on the board. (Can be less than it).");
+            alert("The dice rolled "+random+", You can move up to " + random + " cells on the board. (Can be less than it).");
             return true;
         }), new EventOption("open the merits store", () => {
             openStore(soldier2);
@@ -674,7 +674,7 @@ $(() => {
         })]);
         eventSurgeon1 = new GameEvent("<p>Surgeon(" + surgeon.name + "):</p><p>You can roll a dice to move.</p>", [new EventOption("roll a dice", () => {
             const random = 3;
-            alert("You can move up to " + random + " cells on the board. (Can be less than it).");
+            alert("The dice rolled "+random+"(actually there is only 3), You can move up to " + random + " cells on the board. (Can be less than it).");
             return true;
         }), new EventOption("open the merits store", () => {
             openStore(surgeon);
