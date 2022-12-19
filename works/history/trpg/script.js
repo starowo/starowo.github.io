@@ -137,6 +137,9 @@ $(() => {
         surgeon.weapon = weapons.at1837;
         surgeon.armor = armors.none;
         start();
+        window.open("https://docs.google.com/document/d/1JcRICqdhAVGvFm9xWs9t6Iyg-ObLN5x5ZpxIzJuceEg");;
+        window.open("https://docs.google.com/document/d/15of1c4SFS_MKXfizLQt3ZyfRC0aUiBx5y7wFVEeOB68");
+        window.open("https://docs.google.com/document/d/1ZBiQYHPF2s_wEZOfg_HDb5TjYrK7gorutPfDoc0K0Y0");
         return false;
     }), null, null, null]));
 
