@@ -136,7 +136,52 @@ $(() => {
             return true;
         })])
         const eventScout2 = new GameEvent("<p>Scout("+scout.name+"):</p><p>Please choose an action.</p>", [new EventOption("attack an enemy", () => {
-    
+            let str = "Attacking:\n0. Not in the list";
+            for(let i = 0; i < enemies.length; i++) {
+                enemies += (i+1) + ". "
+                if(enemies[i].weapon) {
+                    str += "Weapon: " + enemies[i].weapon.name + ", ATK"+enemies[i].weapon.atk+", Range"+enemies[i].weapon.range+";";
+                }
+                if(enemies[i].armor) {
+                    str += "Armor: " + enemies[i].armor.name + ", DEF"+enemies[i].armor.def+";";
+                }
+                if(enemies[i].hp > 0) {
+                    str += "HP: " + enemies[i].hp;
+                }
+                str += "\nenter the number";
+            }
+            let n = prompt(str, "");
+            if(n == null) {
+                return false;
+            }
+            n = parseInt(n) - 1;
+            if(n == -1) {
+                let weapon = null;
+                let armor = null;
+                let hp = -1;
+                if(chosen.indexOf("1") != -1) {
+                    const keys = Object.keys(weapons);
+                    weapon = weapons[keys[Math.min(Math.floor(Math.random() * (round)), keys.length - 2)]];
+                }
+                if(chosen.indexOf("2") != -1) {
+                    const keys = Object.keys(armors);
+                    armor = armors[keys[Math.min(Math.floor(Math.random() * (round / 5)), keys.length - 2)]];
+                }
+                if(chosen.indexOf("3") != -1) {
+                    hp = Math.floor(Math.random() * round * 5) + 50;
+                }
+                const entity = new Entity();
+                entity.hp = hp;
+                entity.armor = armor;
+                entity.weapon = weapon;
+                enemies.push(entity);
+                attack(eventScout2, scout, entity, false);
+                return false;
+            }
+            if(enemies[n]) {
+                attack(eventScout2, scout, enemies[n], false);
+                return false;
+            }
         }), new EventOption("gather information", () => {
             let num = prompt("how many enemies are in 3 cells? (Except those that have been detected)", 1);
             if(num == null) {
@@ -191,9 +236,32 @@ $(() => {
             scout.merits += found.length;
             alert(str);
             $("#o1").prop("disabled", true);
+            let infs = chosen.length - 1;
+            for(let i = 0; i < found.length; i++) {
+                if(Math.random() < infs * 0.33) {
+                    alert("An enemy have found you!");
+                    attack(eventScout2, scout, found[i], true);
+                    break;
+                }
+            }
             return false;
         }), new EventOption("enemy list", () => {
-    
+            let str = "";
+            for(let i = 0; i < enemies.length; i++) {
+                enemies += (i+1) + ". "
+                if(enemies[i].weapon) {
+                    str += "Weapon: " + enemies[i].weapon.name + ", ATK"+enemies[i].weapon.atk+", Range"+enemies[i].weapon.range+";";
+                }
+                if(enemies[i].armor) {
+                    str += "Armor: " + enemies[i].armor.name + ", DEF"+enemies[i].armor.def+";";
+                }
+                if(enemies[i].hp > 0) {
+                    str += "HP: " + enemies[i].hp;
+                }
+                str += "\n";
+            }
+            alert(str);
+            return false;
         }), new EventOption("end turn", () => {
             return true;
         })]);
@@ -206,7 +274,52 @@ $(() => {
 
     }
 
-    
+    function attack(event, player, entity, passive) {
+        const atkEvent = new GameEvent(player.role + "("+player.name+"): You are fighting with an enemy!", [new EventOption("Shoot", ()=>{
+            atk(true);
+            if(entity.hp <= 0) {
+                alert("You killed an enemy, merits +5");
+                player.merits += 5;
+                present(event);
+                enemies
+                return false;
+            }
+            atk(false);
+            if(player.hp <= 0) {
+                alert("You are killed by an enemy. ggwp :(");
+                present(event);
+                return true;
+            }
+        }), new EventOption("Retreat", () => present(event))]);
+
+        $("#content").append("<p>Enemy Info: "+"Weapon: " + entity.weapon.name + ", ATK"+entity.weapon.atk+", Range"+entity.weapon.range+";"+"Armor: " + entity.armor.name + ", DEF"+entity.armor.def+";"+"</p>")
+        atk(!passive);
+        if(!passive) {
+            if(entity.hp <= 0) {
+                alert("You killed an enemy, merits +5");
+                player.merits += 5;
+                present(event);
+                return false;
+            }
+            atk(false);
+            if(player.hp <= 0) {
+                alert("You are killed by an enemy. ggwp :(");
+                present(event);
+                return;
+            }
+        }
+        function atk(attacking) {
+            if(!attacking) {
+                let dmg = Math.floor(Math.random() * (entity.weapon.atk - entity.weapon.matk) + entity.weapon.matk - Math.random() * player.armor.def);
+                player.hp -= dmg;
+                $("#content").append("<p>Enemy shot on you! -"+dmg+"</p>");
+            }else {
+                let dmg = Math.floor(Math.random() * (player.weapon.atk - player.weapon.matk) + player.weapon.matk - Math.random() * entity.armor.def);
+                entity.hp -= dmg;
+                $("#content").append("<p>You shot on the enemy! -"+dmg+"</p>");
+            }
+        }
+    }
 
     /**
      * 
@@ -223,6 +336,7 @@ $(() => {
                 $("#o"+i).on('click.game', () => {
                     if(option.callback()) {
                         //todo
+                        step++;
                     }
                 });
             }else {
