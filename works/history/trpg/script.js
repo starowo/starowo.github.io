@@ -331,7 +331,7 @@ $(() => {
             return true;
         })]);
         eventSoldier11 = new GameEvent("<p>Soldier(" + soldier1.name + "):</p><p>You can roll a dice to move.</p>", [new EventOption("roll a dice", () => {
-            const random = Math.floor(Math.random() * 2) + 2;
+            const random = Math.floor(Math.random() * 3) + 2;
             alert("You can move up to " + random + " cells on the board. (Can be less than it).");
             return true;
         }), new EventOption("open the merits store", () => {
@@ -500,7 +500,7 @@ $(() => {
             return true;
         })]);
         eventSoldier21 = new GameEvent("<p>Soldier(" + soldier2.name + "):</p><p>You can roll a dice to move.</p>", [new EventOption("roll a dice", () => {
-            const random = Math.floor(Math.random() * 2) + 2;
+            const random = Math.floor(Math.random() * 3) + 2;
             alert("You can move up to " + random + " cells on the board. (Can be less than it).");
             return true;
         }), new EventOption("open the merits store", () => {
@@ -669,7 +669,7 @@ $(() => {
             return true;
         })]);
         eventSurgeon1 = new GameEvent("<p>Surgeon(" + surgeon.name + "):</p><p>You can roll a dice to move.</p>", [new EventOption("roll a dice", () => {
-            const random = 2;
+            const random = 3;
             alert("You can move up to " + random + " cells on the board. (Can be less than it).");
             return true;
         }), new EventOption("open the merits store", () => {
@@ -794,7 +794,7 @@ $(() => {
             return true;
         })]);
         eventPush = new GameEvent("<p>The enemy advances towards us.</p>", [new EventOption("hold our ground", () => {
-            const num = prompt("plz move all enemies 3 cells toward the positions, and count how many enemies are within 3 cells of our position.", 0);
+            const num = prompt("plz move all enemies 4 cells toward the positions but don't pass, and count how many enemies are within 3 cells of our position.", 0);
             let n = parseInt(num);
             let dmg = 0;
             while(n > 0) {
@@ -948,7 +948,7 @@ $(() => {
                     return true;
                 }
             })], round => {
-                if(round >= 15) {
+                if(round > 25) {
                     return 9999999999;
                 }
                 return 0;
@@ -1192,7 +1192,7 @@ $(() => {
         if(step == 10) {
             round++;
             step = -1;
-            if(Math.random() < 0.55) {
+            if(Math.random() < 0.55 && round <= 25) {
                 present(new GameEvent("<p>Nothing special happened.</p>", [new EventOption("next", () => {
                     return true;
                 })]));
