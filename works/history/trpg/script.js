@@ -244,7 +244,7 @@ $(() => {
                 if (enemies[i].hpknown) {
                     str += "HP: " + enemies[i].hp;
                 }
-                str += "\nenter the numbers of enemies within 3 cell of you.";
+                str += "\nenter the numbers of enemies within 3 cell of you. (can be multiple such as 000)";
             }
             let nn = prompt(str, "");
             if (!nn) {
