@@ -153,12 +153,12 @@ $(() => {
         $("#sun").html(surgeon.name);
         eventEnemy = new GameEvent("<p>A group of Confederate soldiers are trying to advance our position</p>", [new EventOption("roll a dice", () => {
             const random = Math.floor(Math.random() * round / 2) + 1;
-            alert("The dice rolled "+random+", plz put " + random + " enemy soldiers on enemy's side on the gameboard");
+            alert("The dice rolled " + random + ", plz put " + random + " enemy soldiers on enemy's side on the gameboard");
             return true;
         }), null, null, null]);
         eventScout1 = new GameEvent("<p>Scout(" + scout.name + "):</p><p>You can roll a dice to move.</p>", [new EventOption("roll a dice", () => {
             const random = Math.floor(Math.random() * 4) + 3;
-            alert("The dice rolled "+random+", You can move up to " + random + " cells on the board. (Can be less than it).");
+            alert("The dice rolled " + random + ", You can move up to " + random + " cells on the board. (Can be less than it).");
             return true;
         }), new EventOption("open the merits store", () => {
             openStore(scout);
@@ -210,7 +210,7 @@ $(() => {
                 entity.weapon = weapon;
                 enemies.push(entity);
                 let r = prompt("input the distance between you and enemy", 3);
-                if(!(parseInt(r) <= scout.weapon.range + 1)) {
+                if (!(parseInt(r) <= scout.weapon.range + 1)) {
                     alert("This enemy is too far!");
                     return false;
                 }
@@ -219,7 +219,7 @@ $(() => {
             }
             if (enemies[n]) {
                 let r = prompt("input the distance between you and enemy", 3);
-                if(!(parseInt(r) <= scout.weapon.range + 1)) {
+                if (!(parseInt(r) <= scout.weapon.range + 1)) {
                     alert("This enemy is too far!");
                     return false;
                 }
@@ -336,7 +336,7 @@ $(() => {
         })]);
         eventSoldier11 = new GameEvent("<p>Soldier(" + soldier1.name + "):</p><p>You can roll a dice to move.</p>", [new EventOption("roll a dice", () => {
             const random = Math.floor(Math.random() * 3) + 2;
-            alert("The dice rolled "+random+", You can move up to " + random + " cells on the board. (Can be less than it).");
+            alert("The dice rolled " + random + ", You can move up to " + random + " cells on the board. (Can be less than it).");
             return true;
         }), new EventOption("open the merits store", () => {
             openStore(soldier1);
@@ -388,7 +388,7 @@ $(() => {
                 entity.weapon = weapon;
                 enemies.push(entity);
                 let r = prompt("input the distance between you and enemy", 3);
-                if(!(parseInt(r) <= soldier1.weapon.range)) {
+                if (!(parseInt(r) <= soldier1.weapon.range)) {
                     alert("This enemy is too far!");
                     return false;
                 }
@@ -397,7 +397,7 @@ $(() => {
             }
             if (enemies[n]) {
                 let r = prompt("input the distance between you and enemy", 3);
-                if(!(parseInt(r) <= soldier1.weapon.range)) {
+                if (!(parseInt(r) <= soldier1.weapon.range)) {
                     alert("This enemy is too far!");
                     return false;
                 }
@@ -505,7 +505,7 @@ $(() => {
         })]);
         eventSoldier21 = new GameEvent("<p>Soldier(" + soldier2.name + "):</p><p>You can roll a dice to move.</p>", [new EventOption("roll a dice", () => {
             const random = Math.floor(Math.random() * 3) + 2;
-            alert("The dice rolled "+random+", You can move up to " + random + " cells on the board. (Can be less than it).");
+            alert("The dice rolled " + random + ", You can move up to " + random + " cells on the board. (Can be less than it).");
             return true;
         }), new EventOption("open the merits store", () => {
             openStore(soldier2);
@@ -557,7 +557,7 @@ $(() => {
                 entity.weapon = weapon;
                 enemies.push(entity);
                 let r = prompt("input the distance between you and enemy", 3);
-                if(!(parseInt(r) <= soldier2.weapon.range)) {
+                if (!(parseInt(r) <= soldier2.weapon.range)) {
                     alert("This enemy is too far!");
                     return false;
                 }
@@ -566,7 +566,7 @@ $(() => {
             }
             if (enemies[n]) {
                 let r = prompt("input the distance between you and enemy", 3);
-                if(!(parseInt(r) <= soldier2.weapon.range)) {
+                if (!(parseInt(r) <= soldier2.weapon.range)) {
                     alert("This enemy is too far!");
                     return false;
                 }
@@ -674,7 +674,7 @@ $(() => {
         })]);
         eventSurgeon1 = new GameEvent("<p>Surgeon(" + surgeon.name + "):</p><p>You can roll a dice to move.</p>", [new EventOption("roll a dice", () => {
             const random = 3;
-            alert("The dice rolled "+random+"(actually there is only 3), You can move up to " + random + " cells on the board. (Can be less than it).");
+            alert("The dice rolled " + random + "(actually there is only 3), You can move up to " + random + " cells on the board. (Can be less than it).");
             return true;
         }), new EventOption("open the merits store", () => {
             openStore(surgeon);
@@ -727,7 +727,7 @@ $(() => {
                 entity.weapon = weapon;
                 enemies.push(entity);
                 let r = prompt("input the distance between you and enemy", 3);
-                if(!(parseInt(r) <= surgeon.weapon.range)) {
+                if (!(parseInt(r) <= surgeon.weapon.range)) {
                     alert("This enemy is too far!");
                     return false;
                 }
@@ -736,7 +736,7 @@ $(() => {
             }
             if (enemies[n]) {
                 let r = prompt("input the distance between you and enemy", 3);
-                if(!(parseInt(r) <= surgeon.weapon.range)) {
+                if (!(parseInt(r) <= surgeon.weapon.range)) {
                     alert("This enemy is too far!");
                     return false;
                 }
@@ -801,14 +801,14 @@ $(() => {
             const num = prompt("plz move all enemies 4 cells toward the positions but don't pass, and count how many enemies are within 3 cells of our position.", 0);
             let n = parseInt(num);
             let dmg = 0;
-            while(n > 0) {
+            while (n > 0) {
                 dmg += Math.floor(Math.random() * 20 + 30 - Math.random() * 30);
                 n--;
             }
             positionhp -= dmg;
-            if(dmg > 0)
-                alert("our positions are being attacked, hp-"+dmg+", current hp:"+positionhp);
-            if(positionhp <= 0) {
+            if (dmg > 0)
+                alert("our positions are being attacked, hp-" + dmg + ", current hp:" + positionhp);
+            if (positionhp <= 0) {
                 alert("game over, plz refresh the page to restart");
                 return false;
             }
@@ -840,7 +840,7 @@ $(() => {
             })], (round) => {
                 return 0.2;
             }),
-            new GameEvent("<p>A sudden rainstorm causes the battlefield to become muddy and slippery, making it difficult for both sides to maneuver.</p>", [new EventOption("Be careful", ()=>{
+            new GameEvent("<p>A sudden rainstorm causes the battlefield to become muddy and slippery, making it difficult for both sides to maneuver.</p>", [new EventOption("Be careful", () => {
                 alert("Enemie's won't send troops this round, just ignore the next pages telling you to add enemies. All movement this round are slowed by 1 cell.");
                 return true;
             })], (round) => {
@@ -867,7 +867,7 @@ $(() => {
             })], round => {
                 return round * 0.02;
             }),
-            new GameEvent("<p>A group of Union soldiers discovers a lost order from General Lee that reveals the Confederates' plans for the next day</p>", [new EventOption("Advance ambush", ()=>{
+            new GameEvent("<p>A group of Union soldiers discovers a lost order from General Lee that reveals the Confederates' plans for the next day</p>", [new EventOption("Advance ambush", () => {
                 soldier1.hp -= 10;
                 soldier2.hp -= 10;
                 surgeon.hp -= 5;
@@ -898,7 +898,7 @@ $(() => {
             })], round => {
                 return 0.05;
             }),
-            new GameEvent("<p>A Union soldier is badly injured and in need of medical attention.</p>", [new EventOption("Risk saving him", ()=>{
+            new GameEvent("<p>A Union soldier is badly injured and in need of medical attention.</p>", [new EventOption("Risk saving him", () => {
                 surgeon.kit -= 1;
                 surgeon.merits += 15;
                 surgeon.hp -= 40;
@@ -920,7 +920,7 @@ $(() => {
                 alert('You killed the man. You don\'t know what you\'ve missed');
                 return true;
             })], round => {
-                if(round < 10)
+                if (round < 10)
                     return 0;
                 return .07;
             }),
@@ -938,21 +938,21 @@ $(() => {
                 return .06;
             }),
             new GameEvent("<p>The morale of the Confederacy has been frustrated. It's time for us to fight back!</p>", [new EventOption("let's gooooooooooooo", () => {
-                if(scout.hp + soldier1.hp + soldier2.hp + surgeon.hp >= 280) {
-                    if(scout.weapon.atk + soldier1.weapon.atk + soldier2.weapon.atk + surgeon.weapon.atk >= 150) {
+                if (scout.hp + soldier1.hp + soldier2.hp + surgeon.hp >= 280) {
+                    if (scout.weapon.atk + soldier1.weapon.atk + soldier2.weapon.atk + surgeon.weapon.atk >= 150) {
                         alert("Congratulations!!!! We've beaten the Confederate army!");
                         $("#content").html("<h2>Congratulations!!!</h2>");
                         return false;
-                    }else {
+                    } else {
                         alert("Seem like we can't beat them now, try get better weapons");
                         return true;
                     }
-                }else {
+                } else {
                     alert("Seem like we can't beat them now, try heal our wounds");
                     return true;
                 }
             })], round => {
-                if(round > 25) {
+                if (round > 25) {
                     return 9999999999;
                 }
                 return 0;
@@ -966,7 +966,7 @@ $(() => {
                 alert("Surgeon merits+5");
                 return true;
             })], (round) => {
-                return round > 8? 0.07 : 0;
+                return round > 8 ? 0.07 : 0;
             })
         ];
 
@@ -1091,8 +1091,8 @@ $(() => {
         }
         function atk(attacking) {
             if (!attacking) {
-                if(range > entity.weapon.range) {
-                    range --;
+                if (range > entity.weapon.range) {
+                    range--;
                     $("#content").append("<p>Enemy moved toward you.</p>");
                     return;
                 }
@@ -1100,8 +1100,8 @@ $(() => {
                 player.hp -= dmg;
                 $("#content").append("<p>Enemy shot on you! -" + dmg + "</p>");
             } else {
-                if(range > player.weapon.range + (player.role == "scout" ? 1 : 0)) {
-                    range --;
+                if (range > player.weapon.range + (player.role == "scout" ? 1 : 0)) {
+                    range--;
                     $("#content").append("<p>You moved toward enemy.</p>");
                     return;
                 }
@@ -1190,25 +1190,25 @@ $(() => {
             }
             else next();
         }
-        if(step == 9) {
+        if (step == 9) {
             present(eventPush);
         }
-        if(step == 10) {
+        if (step == 10) {
             round++;
             step = -1;
-            if(Math.random() < 0.55 && round <= 25) {
+            if (Math.random() < 0.55 && round <= 25) {
                 present(new GameEvent("<p>Nothing special happened.</p>", [new EventOption("next", () => {
                     return true;
                 })]));
                 return;
             }
             let chance = 0;
-            for(const evt of events) {
+            for (const evt of events) {
                 chance += evt.getPriority(round);
             }
             let rand = Math.random() * chance;
-            for(const evt of events) {
-                if(rand <= evt.getPriority(round)) {
+            for (const evt of events) {
+                if (rand <= evt.getPriority(round)) {
                     events.splice(events.indexOf(evt), 1);
                     present(evt);
                     break;
