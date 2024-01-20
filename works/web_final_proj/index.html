@@ -4,30 +4,57 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="style.css">
-    <title>Your Page Title</title>
+    <title>My Fan Page</title>
 </head>
 <body>
 
     <header>
         <div class="logo-container">
-            <img src="your-logo.png" alt="Logo">
-            <h1>Title</h1>
+            <img src="home.png" alt="Home Icon">
+            <h2  id="logo">Home</h2>
+            <nav id="navigation" class="collapsed">
+                <ul>
+                    <li><a href="cats.html">
+                        <img src="cat.png" alt="Cat Icon">
+                        <h2>My Cats</h2>
+                    </a></li>
+                    <li><a href="valorant.html">
+                        <img src="valorant.ico" alt="Valorant Icon">
+                        <h2>Valorant</h2>
+                    </a></li>
+                </ul>
+            </nav>
         </div>
+
     </header>
 
-    <div class="screen">
-        <button id="prevPage">&lt;</button>
-        <button id="nextPage">&gt;</button>
+    <div class="main">
+        <section class="section1">
+            <h1>About Me</h1>
+            <p>I'm a high school student. This is my project for Web Development fall final. However, I don't know what to put in so I'm just writing random things to fill this page.</p>
+            <p>I have many friends and they are very kind to me, they always help me when I meet any trouble.</p>
+            <p>My teachers are cool and helpful, they're always there answering my concerns. I'm grateful to all of my teachers especially Mr. Simon</p>
+            <p>I love cats, they are very cuuuuute, so I made them a separate page.</p>
+            <h2><strong>Oh by the way, just in case you don't know, you can click on the icon on the top left of the page to go to other pages.</strong></h2>
+            <h6>Give me some points if the animation is cool :p</h6>
+        </section>
+
+        <section class="section2">
+            <h1>My Hobbies</h1>
+            <ul>
+                <li>Creating Computer Programs or Game Mods</li>
+                <li>Playing Video Games (Valorant)</li>
+                <li>Doing Some Challenging Math Problems</li>
+            </ul>
+        </section>
+
+        <section class="section3">
+            <h1>Pictures</h1>
+            <img src="avatar.jpg" alt="My avatar">
+            <br>
+            <strong>My avatar</strong>
+        </section>
     </div>
-
-    <nav id="navigation">
-        <ul>
-            <li><a href="#">Page 1</a></li>
-            <li><a href="#">Page 2</a></li>
-            <li><a href="#">Page 3</a></li>
-        </ul>
-    </nav>
-
     <script src="script.js"></script>
 </body>
 </html>

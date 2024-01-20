@@ -1,20 +1,19 @@
 document.addEventListener('DOMContentLoaded', function () {
-    const toggleNavButton = document.getElementById('toggleNav');
-    const navigation = document.getElementById('navigation');
-    const prevPageButton = document.getElementById('prevPage');
-    const nextPageButton = document.getElementById('nextPage');
+    var logo = document.getElementById('logo');
+    var navigation = document.getElementById('navigation');
 
-    toggleNavButton.addEventListener('click', function () {
-        navigation.style.display = (navigation.style.display === 'block') ? 'none' : 'block';
-    });
+    logo.addEventListener('click', function () {
+        // Toggle the 'expanded' class on the navigation
+        navigation.classList.toggle('expanded');
 
-    prevPageButton.addEventListener('click', function () {
-        // Add logic for going to the previous page
-        console.log('Previous Page Clicked');
-    });
-
-    nextPageButton.addEventListener('click', function () {
-        // Add logic for going to the next page
-        console.log('Next Page Clicked');
+        // If the navigation is expanded, add the 'collapsed' class after a delay
+        if (!navigation.classList.contains('expanded')) {
+            setTimeout(function () {
+                navigation.classList.add('collapsed');
+            }, 300); // Should match the transition duration in CSS
+        } else {
+            // If the navigation is collapsed, remove the 'collapsed' class immediately
+            navigation.classList.remove('collapsed');
+        }
     });
 });

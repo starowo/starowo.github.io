@@ -1,14 +1,13 @@
 body {
     margin: 0;
-    padding: 0;
     font-family: 'Arial', sans-serif;
-    background-color: #333;
 }
 
 header {
-    
-    color: white;
-    padding: 10px;
+    background-color: #333;
+    color: #fff;
+    /* 5px padding on top and bottom, 20px padding on left and right */
+    padding: 5px 20px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -17,41 +16,101 @@ header {
 .logo-container {
     display: flex;
     align-items: center;
+    cursor: pointer;
 }
 
 .logo-container img {
-    height: 30px; /* Adjust the height of your logo */
+    width: 40px;
+    height: 40px;
     margin-right: 10px;
 }
 
-.screen-like-div {
-    background-color: #f0f0f0;
-    padding: 20px;
-    text-align: center;
-}
-
-#navigation {
-    display: none;
+nav {
+    /* Put this right under the main logo and doesn't change the height of header */
     position: fixed;
-    top: 0;
-    left: 0;
-    height: 100%;
-    width: 200px;
+    top: 65px;
     background-color: #333;
-    color: white;
-    padding: 20px;
+    color: #fff;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out;
+    z-index: 1;
 }
 
-#navigation ul {
-    list-style-type: none;
+nav.expanded {
+    max-height: 200px; /* Adjust this value based on your content */
+    transition: max-height 0.3s ease-in;
+}
+
+nav ul {
+    list-style: none;
     padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column; /* Display the navigation items vertically */
 }
 
-#navigation ul li {
-    margin-bottom: 10px;
+nav ul li {
+    margin-top: 10px;
+    margin-bottom: 10px; /* Adjust the spacing between navigation items */
 }
 
-#navigation a {
-    color: white;
+nav a {
     text-decoration: none;
+    color: #fff;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    transition: background-color 0.3s ease;
+}
+
+nav a:hover {
+    background-color: #555; /* Lighter background color on hover */
+}
+
+nav a img {
+    width: 40px;
+    height: 40px;
+    margin-right: 10px;
+}
+
+nav a h2 {
+    margin: 0;
+}
+
+.main {
+    padding: 20px;
+    position: relative;
+}
+
+/* Segment the main area with different background colors */
+.section1 {
+    background-color: #ff7777; /* Sunflower yellow */
+    padding: 20px;
+    border-radius: 8px; /* Optional: Add rounded corners */
+    margin-bottom: 20px;
+}
+
+.section2 {
+    background-color: #75BFBF; /* Peter River blue */
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.section3 {
+    background-color: #c4ee6f; /* Alizarin red */
+    padding: 20px;
+    border-radius: 8px;
+}
+
+.section3 img {
+    /*consistent size*/
+    width: 45%;
+}
+
+/* Navigation animation */
+nav.collapsed {
+    max-height: 0;
+    transition: max-height 0.3s ease-in;
 }
