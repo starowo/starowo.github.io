@@ -1,0 +1,113 @@
+body, html {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+    font-family: Arial, sans-serif;
+}
+
+body {
+    background: linear-gradient(135deg, #1a2a33, #243b4a, #2f4c5f);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: white;
+    position: relative;
+}
+
+.container {
+    width: 90%;
+    height: 90%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+}
+
+header {
+    margin-bottom: 20px;
+    position: absolute;
+    top: 5%;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+}
+
+h1 {
+    font-size: 3.5em;
+    margin: 0;
+    background: linear-gradient(90deg, #f0e130, #ff6347);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-fill-color: transparent;
+}
+
+.back-button {
+    position: absolute;
+    top: 5%;
+    left: 5%;
+    font-size: 2em;
+    color: #f0e130;
+    text-decoration: none;
+    transition: color 0.3s ease;
+}
+
+.back-button:hover {
+    color: #ff6347;
+}
+
+.content {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-top: 10%;
+}
+
+.description {
+    flex: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    margin-right: 20px;
+}
+
+.video {
+    flex: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    margin-left: 20px;
+}
+
+.video-placeholder {
+    width: 200px;
+    height: 200px;
+    background: white;
+    margin-bottom: 20px;
+    border-radius: 10px;
+    opacity: 0.8;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.video-placeholder::before {
+    content: '▶';
+    font-size: 5em;
+    color: rgba(0, 0, 0, 0.6);
+}
+
+.rules p {
+    margin: 10px 0;
+    font-size: 1.3em;
+    color: #d3d3d3;
+    text-align: center;
+}

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QuoriZero</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="quorizero.css">
+</head>
+<body>
+    <div class="page-transition"></div>
+    <div class="container">
+        <header>
+            <h1>QuoriZero</h1>
+        </header>
+        <a class="back-button" href="index.html">←</a>
+        <div class="content">
+            <div class="description">
+                <p><b>QuoriZero</b> is an AI player of board game Quoridor. It's based on the idea of AlphaZero algorithm, which is a machine learning algorithm developed by Google DeepMind. It's a combination of Monte Carlo Tree Search and deep neural network.</p>
+                <p>With some improved training methods from Katago, QuoriZero is trained by playing against itself, and it has achieved a high level of play in Quoridor. It has even beaten the player with highest elo rank in Board Game Arena.</p>
+                <p>The programming language used in QuoriZero is Rust. I used the torch crate to implement the neural network. The training process is done in a distributed manner on 3 servers with NVIDIA GeForce RTX 4090 GPU.</p>
+                <p>To implement distributed training, I used many knowledge and skills of network programming, such as socket programming, multithreading, and message passing.</p>
+                <p>I also made a webpage to play against QuoriZero with a simple interface. It used many web technologies I learned in Mr. Simon's class, such as HTML, CSS, and JavaScript.</p>
+                <p>To actually run it, we need a high-performance GPU and a local server, so I can't provide a live demo. But I can show you a video of it.</p>
+                <p>The entire project is open source and available on GitHub.</p>
+            </div>
+            <div class="video">
+                <video height="300px" controls>
+                    <source src="quorizero.mp4" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+                <div class="rules">
+                    <p>Quoridor is played on a game board of 81 square spaces (9×9). Each player is represented by a pawn which begins at the center space of one edge of the board. The objective is to be the first player to move their pawn to any space on the opposite side of the game board from which it begins.</p>
+
+                    <p>Each player has 10 walls to block their opponent's path. The walls are placed on the edges between the squares. They can be used to either block one's opponent or to create a safe path for oneself.</p>
+
+                    <p>Players take turns either moving their pawn or placing a wall. The pawns can be moved to an adjacent space (not diagonally), and a wall can be placed horizontally or vertically between two spaces. The walls cannot overlap, and the pawns cannot jump over walls. Also, players cannot completely block their opponent's path.</p>
+
+                    <p>Quoridor is a game of strategy and tactics. Although the rules are simple, the game is complex and challenging. It requires players to think ahead and anticipate their opponent's moves. The complexity of the game can even be compared to chess.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>

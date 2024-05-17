@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Papa's Freezeria Forensics</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <img src="header.png" class="header" alt="Header Image">
+    <div id="container">
+        <div id="crime-scene-main" class="crime-scene-container, active">
+            <div class="crime-scene">
+                
+                <div class="switch-scene">←</div>
+                <img src="crime-scene.png" alt="Crime Scene" id="crime-scene-image">
+                <div class="evidence" data-info="Evidence 1 Information" style="top: 10%; left: 10%;">
+                    <img src="evidence1_icon.jpg" alt="Evidence 1">
+                </div>
+                <div class="evidence" data-info="Evidence 2 Information" style="top: 15%; left: 20%;">
+                    <img src="evidence2_icon.jpg" alt="Evidence 2">
+                </div>
+                <div class="evidence" data-info="Evidence 3 Information" style="top: 60%; left: 70%;">
+                    <img src="evidence3_icon.jpg" alt="Evidence 3">
+                </div>
+            </div>
+        </div>
+        <div id="crime-scene-backarea" class="crime-scene-container">
+            <div class="crime-scene">
+                <img src="backarea.png" alt="Crime Scene" id="crime-scene-back-image">
+                <div class="evidence" data-info="Evidence 1 Information" style="top: 10%; left: 10%;">
+                    <img src="evidence1_icon.jpg" alt="Evidence 1">
+                </div>
+                <div class="evidence" data-info="Evidence 2 Information" style="top: 15%; left: 20%;">
+                    <img src="evidence2_icon.jpg" alt="Evidence 2">
+                </div>
+                <div class="evidence" data-info="Evidence 3 Information" style="top: 60%; left: 70%;">
+                    <img src="evidence3_icon.jpg" alt="Evidence 3">
+                </div>
+            </div>
+        </div>
+        <div id="suspects">
+            <div class="suspect" data-info="Suspect 1 Information">
+                <img src="suspect1_icon.jpg" alt="Suspect 1">
+            </div>
+            <div class="suspect" data-info="Suspect 2 Information">
+                <img src="suspect2_icon.jpg" alt="Suspect 2">
+            </div>
+            <div class="suspect" data-info="Suspect 3 Information">
+                <img src="suspect3_icon.jpg" alt="Suspect 3">
+            </div>
+            <div class="suspect" data-info="Suspect 4 Information">
+                <img src="suspect4_icon.jpg" alt="Suspect 4">
+            </div>
+            <div class="suspect" data-info="Suspect 5 Information">
+                <img src="suspect5_icon.jpg" alt="Suspect 5">
+            </div>
+        </div>
+        <div id="suspect-info">
+            <div id="suspect-info-content"></div>
+        </div>
+    </div>
+
+    <div id="popup">
+        <span class="close-btn">X</span>
+        <div id="popup-content">
+            <h2 id="popup-title">Evidence 1 Information</h2>
+            <label class="type">Direct</label>
+            <label class="classify">Biological</label>
+            <p class="popup-text">"Evidence 1 Information"</p>
+            <p class="popup-additional">Additional Info</p>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

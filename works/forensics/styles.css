@@ -1,0 +1,144 @@
+body, html {
+    margin: 0;
+    padding: 0;
+    font-family: Arial, sans-serif;
+    background-image: url(bg_horizontal.webp);
+    background-size: cover;
+}
+
+.bg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.header {
+    display: flex;
+    order: -1;
+    background-color: transparent;
+    width: 100%;
+    height: auto;
+}
+
+#container {
+    display: flex;
+    flex-direction: row;
+    height: calc(100vh - 50px); /* Adjust according to the header height */
+}
+
+#suspects {
+    width: 20%;
+    background-color: transparent;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow-y: auto;
+    padding-top: 10px;
+    justify-content: space-around;
+    order: 1;
+}
+
+#suspects .suspect {
+    margin-bottom: 20px;
+    cursor: pointer;
+    position: relative;
+}
+
+#suspects img {
+    width: 50px;
+    height: 50px;
+}
+
+.crime-scene-container {
+    width: 80%;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+}
+
+.crime-scene-container .active {
+    display: flex;
+}
+
+.crime-scene {
+    position: relative;
+}
+
+.crime-scene img {
+    width: 100%;
+    height: auto;
+}
+
+.evidence {
+    position: absolute;
+    cursor: pointer;
+}
+
+.switch-scene {
+    position: absolute;
+    left: 5%;
+    top: 45%;
+    background-color: rgba(206, 180, 180, 0.5);
+    padding: 0px 5px 5px 5px;
+    font-size:xx-large;
+    cursor: pointer;
+    color: white;
+}
+
+#popup {
+    display: none;
+    position: fixed;
+    background-color: white;
+    padding: 20px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    transform: scale(0);
+    transform-origin: center;
+    transition: transform 0.3s ease;
+}
+
+#popup.show {
+    transform: scale(1);
+}
+
+#popup .close-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    cursor: pointer;
+}
+
+#suspect-info {
+    display: none;
+    width: 100%;
+    background-color: transparent;
+    padding: 10px;
+    order: 2;
+}
+
+#suspect-info.show {
+    display: block;
+}
+
+@media (orientation: portrait) {
+    #container {
+        flex-direction: column;
+    }
+    #suspects {
+        width: 100%;
+        flex-direction: row;
+        justify-content: space-around;
+        padding: 10px 0;
+        order: 1;
+    }
+    #crime-scene {
+        width: 100%;
+        order: 0;
+    }
+    #suspect-info {
+        display: block;
+    }
+}
