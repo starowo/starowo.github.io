@@ -14,7 +14,7 @@
                 
                 <div class="switch-scene">←</div>
                 <img src="crime-scene.png" alt="Crime Scene" id="crime-scene-image">
-                <div class="evidence" data-info="Evidence 1 Information" style="top: 10%; left: 10%;">
+                <div class="evidence" data-info="blood1" style="top: 10%; left: 10%;">
                     <img src="evidence1_icon.jpg" alt="Evidence 1">
                 </div>
                 <div class="evidence" data-info="Evidence 2 Information" style="top: 15%; left: 20%;">
@@ -40,16 +40,16 @@
             </div>
         </div>
         <div id="suspects">
-            <div class="suspect" data-info="Suspect 1 Information">
+            <div class="suspect" data-info="Xinghe">
                 <img src="suspect1_icon.jpg" alt="Suspect 1">
             </div>
-            <div class="suspect" data-info="Suspect 2 Information">
+            <div class="suspect" data-info="Karina">
                 <img src="suspect2_icon.jpg" alt="Suspect 2">
             </div>
-            <div class="suspect" data-info="Suspect 3 Information">
+            <div class="suspect" data-info="Fernando">
                 <img src="suspect3_icon.jpg" alt="Suspect 3">
             </div>
-            <div class="suspect" data-info="Suspect 4 Information">
+            <div class="suspect" data-info="Taylor">
                 <img src="suspect4_icon.jpg" alt="Suspect 4">
             </div>
             <div class="suspect" data-info="Suspect 5 Information">
@@ -57,7 +57,14 @@
             </div>
         </div>
         <div id="suspect-info">
-            <div id="suspect-info-content"></div>
+            <div id="suspect-info-content">
+                <h2 id="popup-title">Evidence 1 Information</h2>
+                <label class="type">Direct</label>
+                <hr>
+                <p class="popup-text">"Evidence 1 Information"</p>
+                <hr>
+                <p class="popup-additional">Additional Info</p>
+            </div>
         </div>
     </div>
 
@@ -67,7 +74,10 @@
             <h2 id="popup-title">Evidence 1 Information</h2>
             <label class="type">Direct</label>
             <label class="classify">Biological</label>
+            <br>
+            <hr>
             <p class="popup-text">"Evidence 1 Information"</p>
+            <hr>
             <p class="popup-additional">Additional Info</p>
         </div>
     </div>
