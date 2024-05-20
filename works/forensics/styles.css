@@ -2,8 +2,11 @@ body, html {
     margin: 0;
     padding: 0;
     font-family: Arial, sans-serif;
-    background-image: url(bg_horizontal.webp);
+    background-image: url(bg.png);
     background-size: cover;
+    max-width: 100%;
+    width: 100%;
+    overflow-x: hidden;
 }
 
 
@@ -23,25 +26,26 @@ body, html {
 
 #suspects {
     width: 20%;
-    background-color: transparent;
+    background: linear-gradient(135deg, #f0f0f0aa, #e0e0e0aa);
+    border-radius: 20px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    overflow-y: auto;
     padding-top: 10px;
     justify-content: space-around;
     order: 1;
 }
 
 #suspects .suspect {
+    width: 30%;
     margin-bottom: 20px;
     cursor: pointer;
     position: relative;
 }
 
 #suspects img {
-    width: 50px;
-    height: 50px;
+    width: 100%;
+    border-radius: 50%;
 }
 
 .crime-scene-container {
@@ -52,7 +56,7 @@ body, html {
     position: relative;
 }
 
-.crime-scene-container .active {
+.crime-scene-container.active {
     display: flex;
 }
 
@@ -81,6 +85,17 @@ body, html {
     color: white;
 }
 
+.switch-scene2 {
+    position: absolute;
+    left: 50%;
+    top: 90%;
+    background-color: rgba(206, 180, 180, 0.5);
+    padding: 0px 12px 5px 12px;
+    font-size:xx-large;
+    cursor: pointer;
+    color: white;
+}
+
 #popup {
     display: none;
     position: fixed;
@@ -91,6 +106,10 @@ body, html {
     transform: scale(0);
     transform-origin: center;
     transition: transform 0.3s ease;
+    max-height: 80%;
+    overflow-y: auto;
+    background: linear-gradient(135deg, #f0f0f0f0, #e0e0e0f0);
+    border-radius: 20px;
 }
 
 #popup.show {
@@ -140,6 +159,7 @@ hr {
     background-color: transparent;
     padding: 10px;
     order: 2;
+    overflow-y: scroll;
 }
 
 #suspect-info.show {
