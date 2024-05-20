@@ -160,6 +160,7 @@ hr {
     padding: 10px;
     order: 2;
     overflow-y: scroll;
+    margin-right: 5px;
 }
 
 #suspect-info.show {
