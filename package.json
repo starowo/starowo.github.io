@@ -1,0 +1,6 @@
+{
+  "devDependencies": {
+    "abcjs": "^6.4.2",
+    "jquery": "^3.7.1"
+  }
+}

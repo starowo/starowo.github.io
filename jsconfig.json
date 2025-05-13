@@ -1,0 +1,11 @@
+{
+    "typeAcquisition": {
+        "include": [
+            "jquery",
+            "abcjs"
+        ]
+    },
+    "include": [
+        "node_modules"
+    ]
+  }

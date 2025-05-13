@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Log Processor V4</title>
+    <style>
+        /* --- Existing Styles (keep as before) --- */
+        body {
+            font-family: sans-serif;
+            display: flex;
+            height: 100vh;
+            margin: 0;
+            background-color: #f4f4f4;
+            position: relative; /* Needed for modal overlay */
+        }
+        .container { display: flex; flex-grow: 1; padding: 15px; gap: 15px; }
+        .panel { background-color: #fff; border: 1px solid #ccc; border-radius: 5px; padding: 15px; display: flex; flex-direction: column; overflow: hidden; }
+        .left-panel { flex-basis: 50%; }
+        .right-panel { flex-basis: 50%; }
+        .controls { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #eee; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        .filter-controls label { margin-left: 5px; margin-right: 15px; font-weight: normal; cursor: pointer;} /* Added cursor */
+        .filter-controls input[type="checkbox"] { margin-right: 3px; vertical-align: middle; cursor: pointer;} /* Added cursor */
+        label { font-weight: bold; margin-right: 5px; }
+        input[type="file"] { border: 1px solid #ccc; padding: 5px; border-radius: 3px; max-width: 180px; }
+        button { padding: 8px 12px; background-color: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; transition: background-color 0.2s ease; white-space: nowrap; }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        button.small-btn { padding: 4px 8px; font-size: 0.85em; }
+        button.danger-btn { background-color: #dc3545; }
+        button.danger-btn:hover { background-color: #c82333; }
+        button.secondary-btn { background-color: #6c757d; }
+        button.secondary-btn:hover { background-color: #5a6268; }
+        .display-area { flex-grow: 1; border: 1px solid #e0e0e0; padding: 10px; overflow-y: auto; background-color: #f9f9f9; white-space: pre-wrap; word-wrap: break-word; font-size: 0.9em; line-height: 1.5; }
+        #message-display .message-item { padding: 5px 5px 5px 10px; margin-bottom: 8px; border-radius: 4px; border-left: 3px solid transparent; position: relative; }
+        #message-display .message-item-prefix { /* Changed from ::before */
+            font-weight: bold;
+            display: block; /* Put prefix on its own line */
+            margin-bottom: 2px;
+            font-size: 0.9em;
+        }
+        #message-display .user-message { background-color: #e7f3ff; border-left-color: #007bff; }
+        #message-display .user-message .message-item-prefix { color: #0056b3; } /* Style for user prefix */
+        #message-display .ai-message { background-color: #f8f9fa; border-left-color: #6c757d; }
+        #message-display .ai-message .message-item-prefix { color: #495057; } /* Style for AI prefix */
+
+        #regex-list { list-style: none; padding: 0; margin: 0; flex-grow: 1; overflow-y: auto; border: 1px solid #e0e0e0; background-color: #f0f0f0; }
+        .regex-item { padding: 10px; border-bottom: 1px solid #ddd; background-color: #fff; cursor: grab; display: flex; justify-content: space-between; align-items: center; }
+        .regex-item:last-child { border-bottom: none; }
+        .regex-item:active { cursor: grabbing; background-color: #eef; }
+        .regex-item .script-name { flex-grow: 1; margin-right: 10px; font-size: 0.95em; }
+        .regex-item .actions { display: flex; gap: 5px; align-items: center; }
+        .dragging { opacity: 0.5; background: #e0e0e0; }
+        .drag-over { border-top: 2px dashed blue; }
+        h3 { margin-top: 0; margin-bottom: 10px; font-size: 1.1em; color: #333; }
+
+        /* --- Modal Styles (keep as before) --- */
+        .modal-overlay { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0, 0, 0, 0.5); justify-content: center; align-items: center; }
+        .modal-content { background-color: #fefefe; margin: auto; padding: 20px; border: 1px solid #888; border-radius: 5px; width: 80%; max-width: 600px; position: relative; box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2), 0 6px 20px 0 rgba(0,0,0,0.19); }
+        .modal-close-btn { color: #aaa; position: absolute; top: 10px; right: 15px; font-size: 28px; font-weight: bold; cursor: pointer; }
+        .modal-close-btn:hover, .modal-close-btn:focus { color: black; text-decoration: none; }
+        .modal-content h4 { margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
+        .modal-form-group { margin-bottom: 15px; }
+        .modal-form-group label { display: block; margin-bottom: 5px; font-weight: bold; }
+        .modal-form-group input[type="text"], .modal-form-group input[type="number"], .modal-form-group textarea { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 3px; box-sizing: border-box; }
+        .modal-form-group textarea { min-height: 80px; font-family: monospace; resize: vertical; }
+        .modal-form-group .checkbox-group label { display: inline-block; margin-right: 15px; font-weight: normal; }
+        .modal-form-group .checkbox-group input[type="checkbox"] { margin-right: 5px; vertical-align: middle; }
+        .modal-actions { text-align: right; margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee; }
+        .modal-actions button { margin-left: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Left Panel: Chat Display -->
+        <div class="panel left-panel">
+            <h3>Chat Content</h3>
+            <div class="controls">
+                <label for="jsonlFile">Upload Chat (.jsonl):</label>
+                <input type="file" id="jsonlFile" accept=".jsonl">
+                 <div class="filter-controls">
+                     <input type="checkbox" id="loadUserMessages" checked>
+                     <label for="loadUserMessages">User</label>
+                     <input type="checkbox" id="loadAiMessages" checked>
+                     <label for="loadAiMessages">AI</label>
+                     <input type="checkbox" id="prefixCheckbox"> <!-- Renamed from "prefix" for clarity -->
+                     <label for="prefixCheckbox">Prefix for TXT</label>
+                 </div>
+                <button id="downloadTxtBtn" disabled>Download as TXT</button>
+            </div>
+            <div id="message-display" class="display-area">
+                Upload a .jsonl file and select message types to view.
+            </div>
+        </div>
+
+        <!-- Right Panel: Regex Rules -->
+        <div class="panel right-panel">
+             <h3>Regex Rules</h3>
+            <div class="controls">
+                <label for="regexFile">Import Rule (.json):</label>
+                <input type="file" id="regexFile" accept=".json">
+                <button id="addNewRuleBtn" class="secondary-btn small-btn">Add New Rule</button>
+                 <span id="rule-count" style="margin-left: auto;">0 rules loaded</span>
+            </div>
+            <ul id="regex-list" class="display-area">
+                <li>Import or add rules. Drag to reorder.</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Edit Rule Modal (Keep as is) -->
+    <div id="edit-rule-modal" class="modal-overlay">
+        <!-- ... Modal content remains the same ... -->
+        <div class="modal-content">
+            <span class="modal-close-btn" onclick="closeEditModal()">×</span>
+            <h4>Edit Regex Rule</h4>
+            <input type="hidden" id="edit-rule-id"> <!-- To store the ID of the rule being edited -->
+
+            <div class="modal-form-group">
+                <label for="edit-scriptName">Script Name:</label>
+                <input type="text" id="edit-scriptName" required>
+            </div>
+
+            <div class="modal-form-group">
+                <label for="edit-findRegex">Find Regex (e.g., /pattern/flags):</label>
+                <textarea id="edit-findRegex" rows="3" required></textarea>
+            </div>
+
+            <div class="modal-form-group">
+                <label for="edit-replaceString">Replace String (use $1, $& etc.):</label>
+                <textarea id="edit-replaceString" rows="3"></textarea>
+            </div>
+
+            <div class="modal-form-group">
+                <label for="edit-trimStrings">Trim Strings (one per line):</label>
+                <textarea id="edit-trimStrings" rows="4" placeholder="Enter strings to remove (each on a new line)"></textarea>
+            </div>
+
+            <div class="modal-form-group">
+                <label>Placement (Apply to):</label>
+                <div class="checkbox-group">
+                    <label for="edit-placement-user">
+                        <input type="checkbox" id="edit-placement-user" value="1"> User
+                    </label>
+                    <label for="edit-placement-ai">
+                        <input type="checkbox" id="edit-placement-ai" value="2"> AI
+                    </label>
+                </div>
+            </div>
+
+            <div class="modal-form-group" style="display: flex; gap: 15px;">
+                <div style="flex: 1;">
+                     <label for="edit-minDepth">Min Depth (0 = last msg):</label>
+                     <input type="number" id="edit-minDepth" min="0" placeholder="0 (empty=0)">
+                </div>
+                 <div style="flex: 1;">
+                    <label for="edit-maxDepth">Max Depth:</label>
+                    <input type="number" id="edit-maxDepth" min="0" placeholder="Infinity (empty=inf)">
+                 </div>
+            </div>
+
+            <div class="modal-actions">
+                <button type="button" class="secondary-btn" onclick="closeEditModal()">Cancel</button>
+                <button type="button" onclick="saveRuleChanges()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // --- DOM Elements ---
+        const jsonlFileInput = document.getElementById('jsonlFile');
+        const downloadTxtBtn = document.getElementById('downloadTxtBtn');
+        const messageDisplay = document.getElementById('message-display');
+        const loadUserCheckbox = document.getElementById('loadUserMessages');
+        const loadAiCheckbox = document.getElementById('loadAiMessages');
+        const prefixCheckbox = document.getElementById('prefixCheckbox'); // Updated ID
+        const regexFileInput = document.getElementById('regexFile');
+        const regexList = document.getElementById('regex-list');
+        const ruleCountSpan = document.getElementById('rule-count');
+        const addNewRuleBtn = document.getElementById('addNewRuleBtn');
+        // Modal Elements (keep as is)
+        const editModal = document.getElementById('edit-rule-modal');
+        const editRuleIdInput = document.getElementById('edit-rule-id');
+        const editScriptNameInput = document.getElementById('edit-scriptName');
+        const editFindRegexInput = document.getElementById('edit-findRegex');
+        const editReplaceStringInput = document.getElementById('edit-replaceString');
+        const editTrimStringsInput = document.getElementById('edit-trimStrings');
+        const editPlacementUserInput = document.getElementById('edit-placement-user');
+        const editPlacementAiInput = document.getElementById('edit-placement-ai');
+        const editMinDepthInput = document.getElementById('edit-minDepth');
+        const editMaxDepthInput = document.getElementById('edit-maxDepth');
+
+
+        // --- State Variables ---
+        let rawMessages = [];
+        let filteredMessages = [];
+        let processedMessages = [];
+        let regexRules = [];
+        let currentJsonlContent = null;
+        let userNamePrefix = "User"; // Default User prefix
+        let aiNamePrefix = "AI";     // Default AI prefix
+
+        // --- Utility ---
+        function generateUUID() { /* ... (keep existing implementation) ... */
+             if (typeof crypto !== 'undefined' && crypto.randomUUID) { return crypto.randomUUID(); }
+             else { return Date.now().toString(36) + Math.random().toString(36).substring(2); }
+        }
+        // --- Event Listeners ---
+        jsonlFileInput.addEventListener('change', handleJsonlFile);
+        loadUserCheckbox.addEventListener('change', processAndDisplayMessages);
+        loadAiCheckbox.addEventListener('change', processAndDisplayMessages);
+        // prefixCheckbox listener not needed, its state is read directly during download
+        downloadTxtBtn.addEventListener('click', downloadMessagesAsTxt);
+        regexFileInput.addEventListener('change', handleRegexFile);
+        addNewRuleBtn.addEventListener('click', addNewRule);
+        editModal.addEventListener('click', (event) => { if (event.target === editModal) closeEditModal(); });
+
+
+        // --- JSONL File Handling (MODIFIED) ---
+        function handleJsonlFile(event) {
+            const file = event.target.files[0];
+            if (!file) {
+                currentJsonlContent = null;
+                rawMessages = [];
+                // Reset prefixes to default if file is cleared
+                userNamePrefix = "User";
+                aiNamePrefix = "AI";
+                processAndDisplayMessages();
+                return;
+            };
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                currentJsonlContent = e.target.result;
+                 try {
+                     parseJsonlContent(currentJsonlContent); // Parse metadata and messages
+                     processAndDisplayMessages(); // Filter, process rules, and display
+                     downloadTxtBtn.disabled = false;
+                 } catch (error) {
+                     console.error("Error processing JSONL file:", error);
+                     messageDisplay.textContent = `Error processing file: ${error.message}`;
+                     downloadTxtBtn.disabled = true;
+                     rawMessages = [];
+                     // Reset prefixes on error
+                     userNamePrefix = "User";
+                     aiNamePrefix = "AI";
+                 }
+            };
+            reader.onerror = function() {
+                messageDisplay.textContent = 'Error reading file.';
+                downloadTxtBtn.disabled = true;
+                 currentJsonlContent = null;
+                 rawMessages = [];
+                 userNamePrefix = "User";
+                 aiNamePrefix = "AI";
+            };
+            reader.readAsText(file);
+        }
+
+        function parseJsonlContent(content) {
+            rawMessages = []; // Clear previous raw messages
+            // Reset prefixes to default before parsing new file
+            userNamePrefix = "User";
+            aiNamePrefix = "AI";
+
+            const lines = content.split('\n').filter(line => line.trim() !== '');
+
+            // 1. Parse Metadata (first line)
+            if (lines.length > 0) {
+                try {
+                    const metadata = JSON.parse(lines[0]);
+                    // Update prefixes if found in metadata
+                    if (metadata && typeof metadata === 'object') {
+                        userNamePrefix = metadata.user_name || "User";
+                        aiNamePrefix = metadata.character_name || "AI";
+                    }
+                     console.log(`Parsed prefixes - User: ${userNamePrefix}, AI: ${aiNamePrefix}`); // For debugging
+                } catch (err) {
+                    console.warn(`Could not parse metadata line (line 1): ${err.message}. Using default prefixes.`);
+                    // Keep default prefixes if metadata parsing fails
+                }
+            } else {
+                 console.warn("JSONL file is empty or has no lines. Using default prefixes.");
+            }
+
+
+            // 2. Parse Messages (starting from the second line, index 1)
+            if (lines.length <= 1) return; // No messages if only metadata or empty
+
+            for (let i = 1; i < lines.length; i++) {
+                try {
+                    const data = JSON.parse(lines[i]);
+                    if (data.hasOwnProperty('is_user') && data.hasOwnProperty('mes')) {
+                        rawMessages.push({
+                             isUser: data.is_user,
+                             text: data.mes ?? '', // Ensure text is always a string
+                             originalIndex: i - 1 // 0-based index relative to messages only
+                        });
+                    }
+                } catch (err) {
+                    console.warn(`Skipping invalid JSON message line ${i + 1}: ${err.message}`);
+                }
+            }
+        }
+
+        // --- Message Filtering and Processing Trigger (Keep existing) ---
+        function processAndDisplayMessages() {
+            const shouldLoadUser = loadUserCheckbox.checked;
+            const shouldLoadAI = loadAiCheckbox.checked;
+            filteredMessages = rawMessages.filter(msg => (msg.isUser && shouldLoadUser) || (!msg.isUser && shouldLoadAI));
+
+             if (filteredMessages.length === 0 && rawMessages.length > 0) { messageDisplay.textContent = 'No messages match the current filter (User/AI).'; processedMessages = []; downloadTxtBtn.disabled = true; return; }
+             else if (rawMessages.length === 0) { messageDisplay.textContent = currentJsonlContent === null ? 'Upload a .jsonl file and select message types to view.' : 'No valid messages found in the uploaded file.'; processedMessages = []; downloadTxtBtn.disabled = true; return; }
+
+            applyAllRegexRules();
+            // Display needs to be updated AFTER parsing metadata to get correct prefixes
+            displayMessages(processedMessages);
+            downloadTxtBtn.disabled = processedMessages.length === 0;
+        }
+
+        // --- Display Messages (MODIFIED for dynamic prefixes) ---
+        function displayMessages(messagesToDisplay) {
+            messageDisplay.innerHTML = ''; // Clear previous content
+            if (messagesToDisplay.length === 0) {
+                 // Keep specific messages from processAndDisplayMessages if applicable
+                 if (!messageDisplay.textContent) {
+                    messageDisplay.textContent = 'No messages to display.';
+                 }
+                 return;
+            }
+            messagesToDisplay.forEach(msg => {
+                const div = document.createElement('div');
+                div.classList.add('message-item');
+                div.classList.add(msg.isUser ? 'user-message' : 'ai-message');
+
+                // Create a span for the prefix
+                const prefixSpan = document.createElement('span');
+                prefixSpan.classList.add('message-item-prefix');
+                // Use the stored prefixes
+                prefixSpan.textContent = (msg.isUser ? userNamePrefix : aiNamePrefix) + ":";
+                div.appendChild(prefixSpan);
+
+                // Create a text node for the actual message content
+                const textNode = document.createTextNode(msg.text);
+                div.appendChild(textNode); // Append text after the prefix span
+
+                messageDisplay.appendChild(div);
+            });
+        }
+
+        // --- TXT Download (MODIFIED) ---
+        function downloadMessagesAsTxt() {
+            if (processedMessages.length === 0) {
+                alert("No messages to download.");
+                return;
+            }
+
+            const addPrefix = prefixCheckbox.checked;
+
+            const textContent = processedMessages.map(msg => {
+                if (addPrefix) {
+                    // Use the stored prefixes from metadata (or defaults)
+                    const prefix = msg.isUser ? userNamePrefix : aiNamePrefix;
+                    return prefix + ": " + msg.text;
+                } else {
+                    // Export only the message text
+                    return msg.text;
+                }
+            }).join('\n\n'); // Add double newline for separation
+
+            const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            // Suggest filename based on user/character names if possible
+            const filenameBase = (userNamePrefix !== "User" || aiNamePrefix !== "AI")
+                               ? `${userNamePrefix}_${aiNamePrefix}_chat`
+                               : 'chat_export';
+            a.download = `${filenameBase}.txt`;
+
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // --- Regex Handling (Keep existing functions) ---
+        function handleRegexFile(event) { /* ... (keep existing) ... */
+             const file = event.target.files[0]; if (!file) return;
+             const reader = new FileReader();
+             reader.onload = function(e) {
+                 try {
+                     const ruleData = JSON.parse(e.target.result);
+                     if (typeof ruleData !== 'object' || Array.isArray(ruleData) || ruleData === null) throw new Error("Imported file must contain a single JSON object rule.");
+                     if (!ruleData.scriptName || !ruleData.findRegex || !ruleData.hasOwnProperty('replaceString') || !ruleData.placement) throw new Error("Rule object is missing required fields (scriptName, findRegex, replaceString, placement).");
+                     ruleData.id = ruleData.id || generateUUID();
+                     regexRules.push(ruleData);
+                     updateRegexRuleDisplay(); processAndDisplayMessages(); regexFileInput.value = null;
+                 } catch (error) { console.error("Error processing regex file:", error); alert(`Error loading regex rule: ${error.message}`); regexFileInput.value = null; }
+             };
+             reader.onerror = function() { alert('Error reading regex file.'); regexFileInput.value = null; };
+             reader.readAsText(file);
+        }
+        function addNewRule() { /* ... (keep existing) ... */
+             const newRule = { id: generateUUID(), scriptName: "New Rule - Edit Me", findRegex: "/find pattern/g", replaceString: "replace with this", trimStrings: [], placement: [1, 2], minDepth: 0, maxDepth: null };
+             regexRules.push(newRule); updateRegexRuleDisplay(); processAndDisplayMessages();
+        }
+        function deleteRule(ruleId) { /* ... (keep existing) ... */
+             regexRules = regexRules.filter(rule => rule.id !== ruleId); updateRegexRuleDisplay(); processAndDisplayMessages();
+        }
+        function updateRegexRuleDisplay() { /* ... (keep existing) ... */
+            regexList.innerHTML = '';
+            ruleCountSpan.textContent = `${regexRules.length} rule${regexRules.length !== 1 ? 's' : ''} loaded`;
+            if (regexRules.length === 0) { regexList.innerHTML = '<li>Import or add rules. Drag to reorder.</li>'; return; }
+            regexRules.forEach((rule, index) => {
+                const li = document.createElement('li'); li.classList.add('regex-item'); li.setAttribute('draggable', true); li.dataset.ruleId = rule.id; li.dataset.index = index;
+                const nameSpan = document.createElement('span'); nameSpan.classList.add('script-name'); nameSpan.textContent = rule.scriptName || `Rule ${index + 1}`; li.appendChild(nameSpan);
+                const actionsDiv = document.createElement('div'); actionsDiv.classList.add('actions');
+                const editButton = document.createElement('button'); editButton.textContent = 'Edit'; editButton.classList.add('small-btn', 'secondary-btn'); editButton.onclick = (e) => { e.stopPropagation(); openEditModal(rule.id); }; actionsDiv.appendChild(editButton);
+                const deleteButton = document.createElement('button'); deleteButton.textContent = 'Delete'; deleteButton.classList.add('small-btn', 'danger-btn'); deleteButton.onclick = (e) => { e.stopPropagation(); if (confirm(`Delete rule "${rule.scriptName || 'this rule'}"?`)) { deleteRule(rule.id); } }; actionsDiv.appendChild(deleteButton);
+                li.appendChild(actionsDiv);
+                li.addEventListener('dragstart', handleDragStart); li.addEventListener('dragover', handleDragOver); li.addEventListener('drop', handleDrop); li.addEventListener('dragend', handleDragEnd); li.addEventListener('dragleave', handleDragLeave);
+                regexList.appendChild(li);
+            });
+        }
+        function applyAllRegexRules() { /* ... (keep existing) ... */
+            processedMessages = JSON.parse(JSON.stringify(filteredMessages));
+            const totalRawMessages = rawMessages.length; if (processedMessages.length === 0) return;
+            regexRules.forEach(rule => {
+                if (!rule || !rule.findRegex || !rule.placement) { console.warn(`Skipping invalid rule:`, rule); return; }
+                try {
+                     const regexMatch = rule.findRegex.match(/^\/(.+)\/([gimyus]*)$/); if (!regexMatch) { console.warn(`Invalid regex format for rule "${rule.scriptName}": ${rule.findRegex}. Skipping.`); return; }
+                     const regex = new RegExp(regexMatch[1], regexMatch[2] || ''); const targetUser = rule.placement.includes(1); const targetAI = rule.placement.includes(2);
+                     const minDepth = (rule.minDepth === null || typeof rule.minDepth === 'undefined') ? 0 : rule.minDepth; const maxDepth = (rule.maxDepth === null || typeof rule.maxDepth === 'undefined') ? Infinity : rule.maxDepth;
+                     processedMessages.forEach((msg) => {
+                         if (!((msg.isUser && targetUser) || (!msg.isUser && targetAI))) return;
+                         const depth = totalRawMessages - 1 - msg.originalIndex; if (depth < minDepth || depth > maxDepth) return;
+                         let currentText = msg.text;
+                         if (Array.isArray(rule.trimStrings) && rule.trimStrings.length > 0) { rule.trimStrings.forEach(trimStr => { if (trimStr) { const escapedTrimStr = trimStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); const trimRegex = new RegExp(escapedTrimStr, 'g'); currentText = currentText.replace(trimRegex, ''); } }); }
+                         currentText = currentText.replace(regex, rule.replaceString || ''); msg.text = currentText;
+                     });
+                } catch (error) { console.error(`Error applying rule "${rule.scriptName || rule.id}":`, error); }
+            });
+        }
+
+        // --- Drag and Drop Logic (Keep existing) ---
+        let draggedItem = null;
+        function handleDragStart(e) { /* ... (keep existing) ... */
+            draggedItem = e.target.closest('.regex-item'); if (!draggedItem) return; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', draggedItem.dataset.ruleId); setTimeout(() => { if (draggedItem) draggedItem.classList.add('dragging'); }, 0); }
+        function handleDragEnd(e) { /* ... (keep existing) ... */
+             if (draggedItem) draggedItem.classList.remove('dragging'); regexList.querySelectorAll('.regex-item').forEach(item => item.classList.remove('drag-over')); draggedItem = null; }
+        function handleDragOver(e) { /* ... (keep existing) ... */
+             e.preventDefault(); e.dataTransfer.dropEffect = 'move'; const targetItem = e.target.closest('.regex-item'); regexList.querySelectorAll('.regex-item').forEach(item => item.classList.remove('drag-over')); if (targetItem && targetItem !== draggedItem) { targetItem.classList.add('drag-over'); } }
+        function handleDragLeave(e) { /* ... (keep existing) ... */
+              const targetItem = e.target.closest('.regex-item'); if (targetItem) targetItem.classList.remove('drag-over'); }
+        function handleDrop(e) { /* ... (keep existing) ... */
+             e.preventDefault(); const targetItem = e.target.closest('.regex-item'); const draggedId = e.dataTransfer.getData('text/plain'); if (targetItem) targetItem.classList.remove('drag-over'); if (!targetItem || targetItem.dataset.ruleId === draggedId) { handleDragEnd(); return; } const targetId = targetItem.dataset.ruleId; const draggedIndex = regexRules.findIndex(rule => rule.id === draggedId); let targetIndex = regexRules.findIndex(rule => rule.id === targetId); if (draggedIndex === -1 || targetIndex === -1) { console.error("D&D error: Rule not found.", {draggedId, targetId}); handleDragEnd(); return; } const [movedRule] = regexRules.splice(draggedIndex, 1); targetIndex = regexRules.findIndex(rule => rule.id === targetId); if(targetIndex === -1) { console.error("D&D error: Target index -1 after splice."); regexRules.splice(draggedIndex, 0, movedRule); handleDragEnd(); return; } regexRules.splice(targetIndex, 0, movedRule); updateRegexRuleDisplay(); processAndDisplayMessages(); handleDragEnd(); }
+
+
+        // --- Modal Functions (Keep existing) ---
+        function openEditModal(ruleId) { /* ... (keep existing) ... */
+            const rule = regexRules.find(r => r.id === ruleId); if (!rule) { console.error("Cannot find rule to edit with ID:", ruleId); return; }
+            editRuleIdInput.value = rule.id; editScriptNameInput.value = rule.scriptName || ''; editFindRegexInput.value = rule.findRegex || ''; editReplaceStringInput.value = rule.replaceString || '';
+            editTrimStringsInput.value = Array.isArray(rule.trimStrings) ? rule.trimStrings.join('\n') : '';
+            editPlacementUserInput.checked = Array.isArray(rule.placement) && rule.placement.includes(1); editPlacementAiInput.checked = Array.isArray(rule.placement) && rule.placement.includes(2);
+            editMinDepthInput.value = (rule.minDepth === null || typeof rule.minDepth === 'undefined') ? '' : rule.minDepth; editMaxDepthInput.value = (rule.maxDepth === null || typeof rule.maxDepth === 'undefined') ? '' : rule.maxDepth;
+            editModal.style.display = 'flex';
+        }
+        function closeEditModal() { /* ... (keep existing) ... */
+             editModal.style.display = 'none'; editRuleIdInput.value = ''; }
+        function saveRuleChanges() { /* ... (keep existing) ... */
+            const ruleId = editRuleIdInput.value; const ruleIndex = regexRules.findIndex(r => r.id === ruleId); if (ruleIndex === -1) { console.error("Cannot find rule to save with ID:", ruleId); alert("Error: Could not find the rule to save."); closeEditModal(); return; }
+            const scriptName = editScriptNameInput.value.trim(); const findRegex = editFindRegexInput.value.trim(); const replaceString = editReplaceStringInput.value;
+            if (!/^\/(.+)\/([gimyus]*)$/.test(findRegex)) { alert("Invalid 'Find Regex' format."); editFindRegexInput.focus(); return; }
+            const trimStrings = editTrimStringsInput.value.split('\n').map(s => s.trim()).filter(s => s !== '');
+            const placement = []; if (editPlacementUserInput.checked) placement.push(1); if (editPlacementAiInput.checked) placement.push(2); if (placement.length === 0) { alert("Placement error: Select User or AI."); return; }
+            const minDepthStr = editMinDepthInput.value.trim(); const maxDepthStr = editMaxDepthInput.value.trim(); const minDepth = minDepthStr === '' ? null : parseInt(minDepthStr, 10); const maxDepth = maxDepthStr === '' ? null : parseInt(maxDepthStr, 10);
+            if ((minDepth !== null && isNaN(minDepth)) || (maxDepth !== null && isNaN(maxDepth)) || (minDepth !== null && minDepth < 0) || (maxDepth !== null && maxDepth < 0) || (minDepth !== null && maxDepth !== null && maxDepth < minDepth) ) { alert("Invalid depth value(s)."); return; }
+            regexRules[ruleIndex] = { ...regexRules[ruleIndex], scriptName: scriptName || `Rule ${ruleIndex + 1}`, findRegex, replaceString, trimStrings, placement, minDepth, maxDepth };
+            closeEditModal(); updateRegexRuleDisplay(); processAndDisplayMessages();
+        }
+
+        // --- Initial State ---
+         processAndDisplayMessages(); // Run initial display logic
+         updateRegexRuleDisplay(); // Display initial regex state
+
+    </script>
+</body>
+</html>
