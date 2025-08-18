@@ -327,8 +327,8 @@ function getFileText(file) {
       presetRegexes.push(...newPresetRegexes);
     }
     renderPresetRegexes();
-    if (changed) {
-      await SillyTavern.reloadCurrentChat();
+    if (changed && SillyTavern.getCurrentChatId()) {
+      SillyTavern.reloadCurrentChat();
     }
   });
 
@@ -366,7 +366,9 @@ function getFileText(file) {
 
       saveRegexesToPreset(presetRegexes);
       toastr.success('Imported script: ' + script.scriptName);
-      await SillyTavern.reloadCurrentChat();
+      if (SillyTavern.getCurrentChatId()) {
+        SillyTavern.reloadCurrentChat();
+      }
     } catch (error) {
       toastr.error('Failed to import script: ' + error.message);
       console.error(error);
@@ -409,7 +411,7 @@ function getFileText(file) {
           presetRegexes.push(script);
           await renderPresetRegexes();
           saveRegexesToPreset(presetRegexes);
-          await SillyTavern.reloadCurrentChat();
+          SillyTavern.reloadCurrentChat();
         });
         scriptDiv.find('.move_to_global').before(bindButton);
       }
@@ -467,7 +469,9 @@ function getFileText(file) {
         .on('input', async function () {
           script.disabled = !!$(this).prop('checked');
           await save();
-          await SillyTavern.reloadCurrentChat();
+          if (SillyTavern.getCurrentChatId()) {
+            SillyTavern.reloadCurrentChat();
+          }
         });
       scriptDiv.find('.regex-toggle-on').on('click', function () {
         scriptDiv.find('.disable_regex').prop('checked', true).trigger('input');
@@ -498,7 +502,7 @@ function getFileText(file) {
         extensions.regex.unshift(script);
         await renderPresetRegexes();
         saveRegexesToPreset(presetRegexes);
-        await SillyTavern.reloadCurrentChat();
+        SillyTavern.reloadCurrentChat();
       });
       scriptDiv.find('.delete_regex').on('click', async function () {
         const chat = await SillyTavern.chat;
@@ -514,7 +518,9 @@ function getFileText(file) {
         presetRegexes.splice(index, 1);
         await renderPresetRegexes();
         saveRegexesToPreset(presetRegexes);
-        await SillyTavern.reloadCurrentChat();
+        if (SillyTavern.getCurrentChatId()) {
+          SillyTavern.reloadCurrentChat();
+        }
       });
       scriptDiv.find('.regex_bulk_checkbox').on('change', function () {
         const checkboxes = $('#regex_container .regex_bulk_checkbox');
@@ -809,7 +815,9 @@ function getFileText(file) {
       };
 
       saveRegexScript(newRegexScript, existingScriptIndex);
-      await SillyTavern.reloadCurrentChat();
+      if (SillyTavern.getCurrentChatId()) {
+        SillyTavern.reloadCurrentChat();
+      }
     }
   }
 
