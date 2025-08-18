@@ -306,12 +306,30 @@ function getFileText(file) {
   });
 
   eventOn('settings_updated', () => {
-    presetRegexes.length = 0;
-    presetRegexes.push(...getRegexesFromPreset());
+    const newPresetRegexes = getRegexesFromPreset();
+    // check if newPresetRegexes is different from presetRegexes
+    let changed = false;
+    if (newPresetRegexes.length !== presetRegexes.length) {
+      changed = true;
+    } else {
+      for (let i = 0; i < presetRegexes.length; i++) {
+        if (newPresetRegexes[i].id !== presetRegexes[i].id) {
+          changed = true;
+          break;
+        }
+      }
+    }
     if (!extensions.regex[MARK]) {
       reproxy(extensions, 'regex', presetRegexes);
     }
+    if (changed) {
+      presetRegexes.length = 0;
+      presetRegexes.push(...newPresetRegexes);
+    }
     renderPresetRegexes();
+    if (changed) {
+      await SillyTavern.reloadCurrentChat();
+    }
   });
 
   async function onImportFile(file) {
@@ -348,6 +366,7 @@ function getFileText(file) {
 
       saveRegexesToPreset(presetRegexes);
       toastr.success('Imported script: ' + script.scriptName);
+      await SillyTavern.reloadCurrentChat();
     } catch (error) {
       toastr.error('Failed to import script: ' + error.message);
       console.error(error);
@@ -448,6 +467,7 @@ function getFileText(file) {
         .on('input', async function () {
           script.disabled = !!$(this).prop('checked');
           await save();
+          await SillyTavern.reloadCurrentChat();
         });
       scriptDiv.find('.regex-toggle-on').on('click', function () {
         scriptDiv.find('.disable_regex').prop('checked', true).trigger('input');
@@ -789,6 +809,7 @@ function getFileText(file) {
       };
 
       saveRegexScript(newRegexScript, existingScriptIndex);
+      await SillyTavern.reloadCurrentChat();
     }
   }
 
