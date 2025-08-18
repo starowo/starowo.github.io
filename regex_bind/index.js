@@ -15,10 +15,9 @@ function reproxy(settings, prop, prefixExtras) {
   if (isOurs(cur)) {
     const info = cur[MARK];
     try {
-      console.log('[RegexProxy] revoke', info);
       info.revoke?.();
     } catch {
-      console.log('[RegexProxy] revoke error', cur);
+      console.error('[RegexProxy] revoke error', cur);
     }
     cur = info.raw; // 原始数组本体
   }
@@ -44,13 +43,11 @@ function reproxy(settings, prop, prefixExtras) {
   });
 
   settings[prop] = proxy;
-  console.log('[RegexProxy] reproxy', settings[prop]);
   return true;
 }
 
 function createPrefixHandler(base, prefix) {
   // remove all elements with duplicate ids from base
-  console.log(base.slice());
   prefix.forEach(p => {
     const index = base.findIndex(b => b.id === p.id);
     if (index !== -1) {
@@ -64,7 +61,6 @@ function createPrefixHandler(base, prefix) {
   const BYPASS_TOKEN = '#saved_regex_scripts';
   const isSavedRendererCb = cb => {
     try {
-      console.log(cb.toString());
       return typeof cb === 'function' && cb.toString().includes(BYPASS_TOKEN);
     } catch {
       return false;
@@ -74,7 +70,6 @@ function createPrefixHandler(base, prefix) {
   return {
     get(target, prop, recv) {
       const P = prefix.length;
-      console.log('[RegexProxy] get', prop);
       if (prop === Symbol.iterator) {
         const full = toFull();
         return full[Symbol.iterator].bind(full);
@@ -157,7 +152,6 @@ function createPrefixHandler(base, prefix) {
     },
 
     set(target, prop, value, recv) {
-      console.log('[RegexProxy] set', prop, value);
       const P = prefix.length;
       if (prop === 'length') {
         const L = Number(value);
@@ -250,8 +244,6 @@ function getFileText(file) {
       })
       .get()
       .filter(id => id);
-    console.log(selectedIds);
-    console.log(scripts.filter(script => selectedIds.includes(script.id)));
     return scripts.filter(script => selectedIds.includes(script.id));
   }
   $('#bulk_enable_regex').on('click', async function () {
@@ -289,15 +281,12 @@ function getFileText(file) {
   window.regexBinding_onSortableStop = async function () {
     // 深拷贝
     const oldScripts = JSON.parse(JSON.stringify(presetRegexes));
-    console.log(oldScripts);
     presetRegexes.length = 0;
     $('#saved_preset_scripts')
       .children()
       .each(function () {
         const id = $(this).attr('id');
-        console.log(id);
         const script = oldScripts.find(s => s.id === id);
-        console.log(script);
         if (script) {
           presetRegexes.push(script);
         }
@@ -688,7 +677,6 @@ function getFileText(file) {
    */
   async function onRegexEditorOpenClick(existingId) {
     const editorHtml = $(await SillyTavern.renderExtensionTemplateAsync('regex', 'editor'));
-    console.log(editorHtml);
     const array = presetRegexes;
 
     // If an ID exists, fill in all the values
@@ -801,6 +789,23 @@ function getFileText(file) {
       };
 
       saveRegexScript(newRegexScript, existingScriptIndex);
+    }
+  }
+
+  function regexFromString(input) {
+    try {
+      // Parse input
+      const m = input.match(/(\/?)(.+)\1([a-z]*)/i);
+
+      // Invalid flags
+      if (m[3] && !/^(?!.*?(.).*?\1)[gmixXsuUAJ]+$/.test(m[3])) {
+        return RegExp(input);
+      }
+
+      // Create the regular expression
+      return new RegExp(m[2], m[3]);
+    } catch {
+      return;
     }
   }
 
@@ -920,7 +925,6 @@ function getFileText(file) {
       setPrompt('regexes-bindings', json);
     }
     updatePresetWith('in_use', preset => {
-      console.log(getPreset('in_use'));
       return getPreset('in_use');
     });
   }
