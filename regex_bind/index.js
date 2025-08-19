@@ -631,6 +631,22 @@ function getFileText(file) {
       : x;
   }
   /**
+   * Filters anything to trim from the regex match
+   * @param {string} rawString The raw string to filter
+   * @param {string[]} trimStrings The strings to trim
+   * @param {RegexScriptParams} params The parameters to use for the regex filter
+   * @returns {string} The filtered string
+   */
+  function filterString(rawString, trimStrings, { characterOverride } = {}) {
+    let finalString = rawString;
+    trimStrings.forEach(trimString => {
+      const subTrimString = SillyTavern.substituteParams(trimString, undefined, characterOverride);
+      finalString = finalString.replaceAll(subTrimString, '');
+    });
+
+    return finalString;
+  }
+  /**
    * Runs the provided regex script on the given string
    * @param {import('./index.js').RegexScript} regexScript The regex script to run
    * @param {string} rawString The string to run the regex script on
