@@ -361,6 +361,7 @@ function getFileText(file) {
       } else {
         await onImportScript(regexScripts);
       }
+      toastr.success('记得保存预设以防正则丢失喵');
     } catch (error) {
       toastr.error('Failed to import file');
       console.error(error);
@@ -426,6 +427,7 @@ function getFileText(file) {
           presetRegexes.push(script);
           await renderPresetRegexes();
           saveRegexesToPreset(presetRegexes);
+          toastr.success('已绑定到预设，记得保存预设以防正则丢失喵');
           SillyTavern.reloadCurrentChat();
         });
         scriptDiv.find('.move_to_global').before(bindButton);
