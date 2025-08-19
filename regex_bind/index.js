@@ -306,6 +306,12 @@ function getFileText(file) {
   });
 
   window.regexBinding_onSortableStop = async function () {
+    if (window.__regexBinding_isSorting === 99) {
+      window.__regexBinding_isSorting = 0;
+      await renderPresetRegexes();
+      return;
+    }
+    window.__regexBinding_isSorting = 99;
     // 深拷贝
     const oldScripts = JSON.parse(JSON.stringify(presetRegexes));
     presetRegexes.length = 0;
@@ -322,11 +328,9 @@ function getFileText(file) {
     await renderPresetRegexes();
   };
 
-  $('#saved_preset_scripts').sortable({
-    delay: SillyTavern.isMobile() ? 750 : 50,
-    stop: window.regexBinding_onSortableStop,
-  });
-  $('#saved_preset_scripts').sortable('enable');
+  window.regexBinding_onSortableStart = function () {
+    window.__regexBinding_isSorting = 1;
+  };
 
   const observer = new MutationObserver(function () {
     injectBindButtons();
@@ -340,8 +344,16 @@ function getFileText(file) {
   updateSTRegexes();
   renderPresetRegexes();
 
+  $('#saved_preset_scripts').sortable({
+    delay: SillyTavern.isMobile() ? 750 : 50,
+    start: window.regexBinding_onSortableStart,
+    stop: window.regexBinding_onSortableStop,
+  });
+  $('#saved_preset_scripts').sortable('enable');
+
   eventOn('settings_updated', () => {
     const newPresetRegexes = getRegexesFromPreset();
+    const oldIdOrder = presetRegexes.map(s => s.id);
     // check if newPresetRegexes is different from presetRegexes
     let changed = false;
     if (newPresetRegexes.length !== presetRegexes.length) {
@@ -374,7 +386,9 @@ function getFileText(file) {
       }
       saveRegexesToPreset(presetRegexes);
     }
-    renderPresetRegexes();
+    if (!_.isEqual(oldIdOrder, presetRegexes.map(s => s.id))) {
+      renderPresetRegexesSafely();
+    }
     if (changed) {
       updateSTRegexes();
     }
@@ -501,6 +515,14 @@ function getFileText(file) {
     });
   }
 
+  async function renderPresetRegexesSafely() {
+    if (window.__regexBinding_isSorting) {
+      window.__regexBinding_isSorting = 99;
+      return;
+    }
+    await renderPresetRegexes();
+  }
+
   async function renderPresetRegexes() {
     injectBindButtons();
     updateCss();
@@ -509,10 +531,11 @@ function getFileText(file) {
     if (block.length === 0) {
       block = injectPresetBlock(regex_settings);
     }
-
+    
     block = block.find('#saved_preset_scripts');
     block.empty();
     presetRegexes.forEach((script, index) => renderScript(block, script, index));
+
 
     function renderScript(container, script, index) {
       const scriptHTML = `
@@ -709,7 +732,8 @@ function getFileText(file) {
     const global_scripts_block = regex_settings.find('#global_scripts_block');
     global_scripts_block.before(htmlTemplate);
     $('#saved_preset_scripts').sortable({
-      delay: SillyTavern.isMobile ? 750 : 50,
+      delay: SillyTavern.isMobile() ? 750 : 50,
+      start: window.regexBinding_onSortableStart,
       stop: window.regexBinding_onSortableStop,
     });
     $('#saved_preset_scripts').sortable('enable');
@@ -1089,12 +1113,15 @@ function getFileText(file) {
 
   function saveLockedRegexes(regexes) {
     const json = JSON.stringify(regexes);
-    insertOrAssignVariables({
-      'locked-regexes': json,
-    }, {
-      type: 'script',
-      script_id: getScriptId(),
-    });
+    insertOrAssignVariables(
+      {
+        'locked-regexes': json,
+      },
+      {
+        type: 'script',
+        script_id: getScriptId(),
+      },
+    );
   }
 
   function getRegexesFromPreset() {
