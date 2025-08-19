@@ -24,6 +24,7 @@ const promptTemplate = {
   forbid_overrides: false,
 };
 
+/* deprecated
 function reproxy(settings, prop, prefixExtras) {
   let cur = settings[prop];
 
@@ -191,7 +192,7 @@ function createPrefixHandler(base, prefix) {
     },
   };
 }
-
+ */
 function getFileText(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -208,7 +209,17 @@ function getFileText(file) {
 (() => {
   const extensions = SillyTavern.extensionSettings;
   const presetRegexes = getRegexesFromPreset();
-  reproxy(extensions, 'regex', presetRegexes);
+
+  const injectCssStyles = `
+    <style id="regex-binding-css">
+      #saved_regex_scripts [id^="preset_"] {
+        display: none;
+      }
+    </style>
+  `;
+  if ($('#regex-binding-css').length === 0) {
+    $('head').append(injectCssStyles);
+  }
 
   const regexButtons = $('#open_preset_editor');
   if (regexButtons.length !== 0) {
@@ -316,9 +327,16 @@ function getFileText(file) {
   });
   $('#saved_preset_scripts').sortable('enable');
 
-  $('#saved_regex_scripts').on('change', function () {
+  const observer = new MutationObserver(function () {
     injectBindButtons();
   });
+  const observerTarget = $('#saved_regex_scripts');
+  observer.observe(observerTarget[0], {
+    childList: true,
+    subtree: true,
+  });
+
+  updateSTRegexes();
 
   eventOn('settings_updated', () => {
     const newPresetRegexes = getRegexesFromPreset();
@@ -334,18 +352,56 @@ function getFileText(file) {
         }
       }
     }
+    /*
     if (!extensions.regex[MARK]) {
       reproxy(extensions, 'regex', presetRegexes);
     }
+    */
     if (changed) {
       presetRegexes.length = 0;
       presetRegexes.push(...newPresetRegexes);
     }
     renderPresetRegexes();
-    if (changed && SillyTavern.getCurrentChatId()) {
-      SillyTavern.reloadCurrentChat();
+    if (changed) {
+      updateSTRegexes();
     }
   });
+
+  function updateSTRegexes() {
+    const stRegexes = extensions.regex.slice();
+    updateCss();
+    let presetRegexCount = 0;
+    for (const script of stRegexes) {
+      if (script.id.startsWith('preset_')) {
+        presetRegexCount++;
+      }
+    }
+    if (presetRegexCount !== presetRegexes.length) {
+      const newPresetRegexes = presetRegexes.map(s => ({
+        ...s,
+        id: 'preset_' + s.id,
+      }));
+      extensions.regex = newPresetRegexes.concat(stRegexes.filter(s => !s.id.startsWith('preset_')));
+      SillyTavern.reloadCurrentChat();
+    } else {
+      presetRegexes.forEach((s, i) => {
+        extensions.regex[i] = {
+          ...s,
+          id: 'preset_' + s.id,
+        };
+      });
+    }
+  }
+
+  function updateCss() {
+    /*const css = `
+    #${presetRegexes.map(s => `#preset_${s.id}`).join(', ')} {
+      display: none;
+    }
+    `;
+    injectedCss.html(css);*/
+    // pass
+  }
 
   async function onImportFile(file) {
     if (!file) {
@@ -415,20 +471,17 @@ function getFileText(file) {
               return;
             }
           }
-          const script = extensions.regex.find(s => s.id === scriptId);
+          const script = _.remove(extensions.regex, s => s.id === scriptId)[0];
           if (!script) {
             toastr.error('Script not found');
             return;
           }
-          const index = extensions.regex.findIndex(s => s.id === scriptId);
-          extensions.regex.splice(index, 1);
           scriptDiv.remove();
-
           presetRegexes.push(script);
           await renderPresetRegexes();
           saveRegexesToPreset(presetRegexes);
           toastr.success('已绑定到预设，记得保存预设以防正则丢失喵');
-          SillyTavern.reloadCurrentChat();
+          updateSTRegexes();
         });
         scriptDiv.find('.move_to_global').before(bindButton);
       }
@@ -437,6 +490,7 @@ function getFileText(file) {
 
   async function renderPresetRegexes() {
     injectBindButtons();
+    updateCss();
     const regex_settings = $('.regex_settings');
     let block = regex_settings.find('#preset_regexes_block');
     if (block.length === 0) {
@@ -486,6 +540,7 @@ function getFileText(file) {
         .on('input', async function () {
           script.disabled = !!$(this).prop('checked');
           await save();
+          updateSTRegexes();
           if (SillyTavern.getCurrentChatId()) {
             SillyTavern.reloadCurrentChat();
           }
@@ -516,10 +571,15 @@ function getFileText(file) {
           }
         }
         presetRegexes.splice(index, 1);
-        extensions.regex.unshift(script);
+        const i = _.findLastIndex(extensions.regex, s => s.id.startsWith('preset_'));
+        if (i !== -1) {
+          extensions.regex.splice(i, 0, script);
+        } else {
+          extensions.regex.unshift(script);
+        }
         await renderPresetRegexes();
         saveRegexesToPreset(presetRegexes);
-        SillyTavern.reloadCurrentChat();
+        updateSTRegexes();
       });
       scriptDiv.find('.delete_regex').on('click', async function () {
         const chat = await SillyTavern.chat;
@@ -535,9 +595,7 @@ function getFileText(file) {
         presetRegexes.splice(index, 1);
         await renderPresetRegexes();
         saveRegexesToPreset(presetRegexes);
-        if (SillyTavern.getCurrentChatId()) {
-          SillyTavern.reloadCurrentChat();
-        }
+        updateSTRegexes();
       });
       scriptDiv.find('.regex_bulk_checkbox').on('change', function () {
         const checkboxes = $('#regex_container .regex_bulk_checkbox');
@@ -971,6 +1029,7 @@ function getFileText(file) {
     }
     await renderPresetRegexes();
     saveRegexesToPreset(presetRegexes);
+    updateSTRegexes();
     // SillyTavern.reloadCurrentChat();
   }
 
