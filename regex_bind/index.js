@@ -311,7 +311,7 @@ function getFileText(file) {
       await renderPresetRegexes();
       return;
     }
-    window.__regexBinding_isSorting = 99;
+    window.__regexBinding_isSorting = 0;
     // 深拷贝
     const oldScripts = JSON.parse(JSON.stringify(presetRegexes));
     presetRegexes.length = 0;
