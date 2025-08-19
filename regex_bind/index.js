@@ -9,6 +9,21 @@ function isOurs(val) {
   }
 }
 
+const promptTemplate = {
+  identifier: '',
+  system_prompt: false,
+  enabled: false,
+  marker: false,
+  name: '',
+  role: 'system',
+  content: '',
+  injection_position: 0,
+  injection_depth: 4,
+  injection_order: 100,
+  injection_trigger: null,
+  forbid_overrides: false,
+};
+
 function reproxy(settings, prop, prefixExtras) {
   let cur = settings[prop];
 
@@ -989,21 +1004,6 @@ function getFileText(file) {
       prompt.content = content;
     }
   }
-
-  const promptTemplate = {
-    identifier: '',
-    system_prompt: false,
-    enabled: false,
-    marker: false,
-    name: '',
-    role: 'system',
-    content: '',
-    injection_position: 0,
-    injection_depth: 4,
-    injection_order: 100,
-    injection_trigger: null,
-    forbid_overrides: false,
-  };
 
   function addPrompt(id, name, content, extras = {}) {
     const prompt = { ...promptTemplate };
