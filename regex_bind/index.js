@@ -338,6 +338,7 @@ function getFileText(file) {
   });
 
   updateSTRegexes();
+  renderPresetRegexes();
 
   eventOn('settings_updated', () => {
     const newPresetRegexes = getRegexesFromPreset();
