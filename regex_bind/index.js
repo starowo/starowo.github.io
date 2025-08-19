@@ -209,6 +209,7 @@ function getFileText(file) {
 (() => {
   const extensions = SillyTavern.extensionSettings;
   const presetRegexes = getRegexesFromPreset();
+  const lockedRegexes = loadLockedRegexes();
 
   const injectCssStyles = `
     <style id="regex-binding-css">
@@ -357,9 +358,20 @@ function getFileText(file) {
       reproxy(extensions, 'regex', presetRegexes);
     }
     */
-    if (changed) {
+    if (changed || lockedRegexes.length > 0) {
       presetRegexes.length = 0;
       presetRegexes.push(...newPresetRegexes);
+      if (lockedRegexes.length > 0) {
+        for (const regex of lockedRegexes) {
+          const index = presetRegexes.findIndex(s => s.id === regex.id);
+          if (index === -1) {
+            presetRegexes.unshift(regex);
+          } else {
+            presetRegexes[index] = regex;
+          }
+        }
+      }
+      saveRegexesToPreset(presetRegexes);
     }
     renderPresetRegexes();
     if (changed) {
@@ -513,6 +525,12 @@ function getFileText(file) {
                   <span class="regex-toggle-on fa-solid fa-toggle-on" data-i18n="[title]ext_regex_disable_script" title="Disable script"></span>
                   <span class="regex-toggle-off fa-solid fa-toggle-off" data-i18n="[title]ext_regex_enable_script" title="Enable script"></span>
               </label>
+              <div class="lock_regex menu_button" data-i18n="[title]ext_regex_lock_regex" title="锁定正则">
+                  <i class="fa-solid fa-unlock"></i>
+              </div>
+              <div class="unlock_regex menu_button" data-i18n="[title]ext_regex_unlock_regex" title="解锁正则">
+                  <i class="fa-solid fa-lock"></i>
+              </div>
               <div class="edit_existing_regex menu_button" data-i18n="[title]ext_regex_edit_script" title="Edit script">
                   <i class="fa-solid fa-pencil"></i>
               </div>
@@ -553,6 +571,24 @@ function getFileText(file) {
       });
       scriptDiv.find('.edit_existing_regex').on('click', async function () {
         await onRegexEditorOpenClick(scriptDiv.attr('id'));
+      });
+      if (lockedRegexes.findIndex(s => s.id === script.id) !== -1) {
+        scriptDiv.find('.lock_regex').hide();
+        scriptDiv.find('.unlock_regex').show();
+      } else {
+        scriptDiv.find('.lock_regex').show();
+        scriptDiv.find('.unlock_regex').hide();
+      }
+      scriptDiv.find('.lock_regex').on('click', async function () {
+        lockedRegexes.push(script);
+        await renderPresetRegexes();
+        saveLockedRegexes(lockedRegexes);
+      });
+      scriptDiv.find('.unlock_regex').on('click', async function () {
+        _.remove(lockedRegexes, s => s.id === script.id);
+        await renderPresetRegexes();
+        saveLockedRegexes(lockedRegexes);
+        saveRegexesToPreset(presetRegexes);
       });
       scriptDiv.find('.export_regex').on('click', async function () {
         const fileName = `regex-${sanitizeFileName(script.scriptName)}.json`;
@@ -1033,13 +1069,44 @@ function getFileText(file) {
     // SillyTavern.reloadCurrentChat();
   }
 
+  function loadLockedRegexes() {
+    const variables = getVariables({
+      type: 'script',
+      script_id: getScriptId(),
+    });
+    if (variables && variables['locked-regexes']) {
+      const json = JSON.stringify(variables['locked-regexes']);
+      if (json) {
+        return JSON.parse(json);
+      } else {
+        return [];
+      }
+    }
+    return [];
+  }
+
+  function saveLockedRegexes(regexes) {
+    const json = JSON.stringify(regexes);
+    insertOrAssignVariables({
+      'locked-regexes': json,
+    }, {
+      type: 'script',
+      script_id: getScriptId(),
+    });
+  }
+
   function getRegexesFromPreset() {
     const json = getPrompt('regexes-bindings') || '';
     return json ? JSON.parse(json) : [];
   }
 
   function saveRegexesToPreset(regexes) {
-    const json = JSON.stringify(regexes);
+    const currentRegexes = getRegexesFromPreset();
+    // if regex in locked and not in currentRegexes, do not save it
+    const newRegexes = regexes.filter(
+      s => !lockedRegexes.find(l => l.id === s.id) || currentRegexes.find(c => c.id === s.id),
+    );
+    const json = JSON.stringify(newRegexes);
     if (!getPrompt('regexes-bindings')) {
       addPrompt('regexes-bindings', '【勿删】绑定正则', json);
     } else {
