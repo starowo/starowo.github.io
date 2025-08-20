@@ -344,6 +344,21 @@ function getFileText(file) {
   updateSTRegexes();
   renderPresetRegexes();
 
+  $('.regex_settings .collapse_regexes').on('click', function () {
+    const icon = $(this).find('i');
+    const scripts = $('#saved_preset_scripts');
+    $('.regex_settings .collapse_regexes small').text(icon.hasClass('fa-chevron-up') ? '展开' : '收起');
+    if (icon.hasClass('fa-chevron-up')) {
+      scripts.hide();
+      icon.removeClass('fa-chevron-up');
+      icon.addClass('fa-chevron-down');
+    } else {
+      scripts.show();
+      icon.removeClass('fa-chevron-down');
+      icon.addClass('fa-chevron-up');
+    }
+  });
+
   $('#saved_preset_scripts').sortable({
     delay: SillyTavern.isMobile() ? 750 : 50,
     start: window.regexBinding_onSortableStart,
@@ -386,7 +401,12 @@ function getFileText(file) {
       }
       saveRegexesToPreset(presetRegexes);
     }
-    if (!_.isEqual(oldIdOrder, presetRegexes.map(s => s.id))) {
+    if (
+      !_.isEqual(
+        oldIdOrder,
+        presetRegexes.map(s => s.id),
+      )
+    ) {
       renderPresetRegexesSafely();
     }
     if (changed) {
@@ -527,15 +547,11 @@ function getFileText(file) {
     injectBindButtons();
     updateCss();
     const regex_settings = $('.regex_settings');
-    let block = regex_settings.find('#preset_regexes_block');
-    if (block.length === 0) {
-      block = injectPresetBlock(regex_settings);
-    }
-    
+    let block = injectPresetBlock(regex_settings);
+
     block = block.find('#saved_preset_scripts');
     block.empty();
     presetRegexes.forEach((script, index) => renderScript(block, script, index));
-
 
     function renderScript(container, script, index) {
       const scriptHTML = `
@@ -725,18 +741,28 @@ function getFileText(file) {
       <small data-i18n="ext_regex_preset_regexes_desc">
         影响所有角色，保存在预设中。
       </small>
+      <div class="flex-container flexnowrap">
+        <div class="collapse_regexes menu_button" data-i18n="[title]ext_regex_collapse_regexes" title="收起/展开">
+          <i class="fa-solid fa-chevron-up"></i>
+          <small>收起</small>
+        </div>
+      </div>
       <div id="saved_preset_scripts" no-scripts-text="No scripts found" data-i18n="[no-scripts-text]No scripts found" class="flex-container regex-script-container flexFlowColumn"></div>
     </div>
     <hr />
     `;
-    const global_scripts_block = regex_settings.find('#global_scripts_block');
-    global_scripts_block.before(htmlTemplate);
-    $('#saved_preset_scripts').sortable({
-      delay: SillyTavern.isMobile() ? 750 : 50,
-      start: window.regexBinding_onSortableStart,
-      stop: window.regexBinding_onSortableStop,
-    });
-    $('#saved_preset_scripts').sortable('enable');
+    let block = regex_settings.find('#preset_regexes_block');
+    if (block.length === 0) {
+      block = $(htmlTemplate);
+      const global_scripts_block = regex_settings.find('#global_scripts_block');
+      global_scripts_block.before(block);
+      $('#saved_preset_scripts').sortable({
+        delay: SillyTavern.isMobile() ? 750 : 50,
+        start: window.regexBinding_onSortableStart,
+        stop: window.regexBinding_onSortableStop,
+      });
+      $('#saved_preset_scripts').sortable('enable');
+    }
     return regex_settings.find('#preset_regexes_block');
   }
 
