@@ -1138,15 +1138,25 @@ function getFileText(file) {
   }
 
   function saveLockedRegexes(regexes) {
-    insertOrAssignVariables(
-      {
-        'locked-regexes': regexes,
-      },
-      {
-        type: 'script',
-        script_id: getScriptId(),
-      },
-    );
+    if (!regexes || regexes.length == 0) {
+      deleteVariable(
+        'locked-regexes',
+        {
+          type: 'script',
+          script_id: getScriptId(),
+        },
+      );
+    } else {
+      insertOrAssignVariables(
+        {
+          'locked-regexes': regexes,
+        },
+        {
+          type: 'script',
+          script_id: getScriptId(),
+        },
+      );
+    }
   }
 
   function getRegexesFromPreset() {
