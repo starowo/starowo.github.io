@@ -283,6 +283,7 @@ function getFileText(file) {
     }
     await renderPresetRegexes();
     saveRegexesToPreset(presetRegexes);
+    updateSTRegexes();
   });
 
   $('#bulk_disable_regex').on('click', async function () {
@@ -295,6 +296,7 @@ function getFileText(file) {
     }
     await renderPresetRegexes();
     saveRegexesToPreset(presetRegexes);
+    updateSTRegexes();
   });
 
   $('#bulk_delete_regex').on('click', async function () {
@@ -485,9 +487,7 @@ function getFileText(file) {
 
       saveRegexesToPreset(presetRegexes);
       toastr.success('Imported script: ' + script.scriptName);
-      if (SillyTavern.getCurrentChatId()) {
-        SillyTavern.reloadCurrentChat();
-      }
+      updateSTRegexes();
     } catch (error) {
       toastr.error('Failed to import script: ' + error.message);
       console.error(error);
