@@ -1167,9 +1167,12 @@ function getFileText(file) {
     } else {
       setPrompt('regexes-bindings', json);
     }
+    /*
+    // 疑似有big会导致丢条目，先注释掉
     updatePresetWith('in_use', preset => {
       return getPreset('in_use');
     });
+    */
   }
 
   function getPrompt(identifier) {
