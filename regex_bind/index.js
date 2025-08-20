@@ -342,9 +342,9 @@ function getFileText(file) {
     childList: true,
     subtree: true,
   });
-
-  updateSTRegexes();
+  
   renderPresetRegexes();
+  updateSTRegexes();
 /*
   $('.regex_settings .collapse_regexes').on('click', function () {
     const icon = $(this).find('i');
@@ -1123,7 +1123,13 @@ function getFileText(file) {
     if (variables && variables['locked-regexes']) {
       const json = JSON.stringify(variables['locked-regexes']);
       if (json) {
-        return JSON.parse(json);
+        const result = JSON.parse(json);
+        // if not array, return []
+        if (!Array.isArray(result)) {
+          toastr.error('加载锁定正则时出错，请尝试更新酒馆助手');
+          return [];
+        }
+        return result;
       } else {
         return [];
       }
@@ -1132,10 +1138,9 @@ function getFileText(file) {
   }
 
   function saveLockedRegexes(regexes) {
-    const json = JSON.stringify(regexes);
     insertOrAssignVariables(
       {
-        'locked-regexes': json,
+        'locked-regexes': regexes,
       },
       {
         type: 'script',
