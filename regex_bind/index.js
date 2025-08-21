@@ -392,14 +392,16 @@ function getFileText(file) {
       presetRegexes.length = 0;
       presetRegexes.push(...newPresetRegexes);
       if (lockedRegexes.length > 0) {
+        const toAdd = [];
         for (const regex of lockedRegexes) {
           const index = presetRegexes.findIndex(s => s.id === regex.id);
           if (index === -1) {
-            presetRegexes.unshift(regex);
+            toAdd.push(regex);
           } else {
             presetRegexes[index] = regex;
           }
         }
+        presetRegexes.unshift(...toAdd);
       }
       saveRegexesToPreset(presetRegexes);
     }
@@ -1138,25 +1140,15 @@ function getFileText(file) {
   }
 
   function saveLockedRegexes(regexes) {
-    if (!regexes || regexes.length == 0) {
-      deleteVariable(
-        'locked-regexes',
-        {
-          type: 'script',
-          script_id: getScriptId(),
-        },
-      );
-    } else {
-      insertOrAssignVariables(
-        {
-          'locked-regexes': regexes,
-        },
-        {
-          type: 'script',
-          script_id: getScriptId(),
-        },
-      );
-    }
+    insertOrAssignVariables(
+      {
+        'locked-regexes': regexes,
+      },
+      {
+        type: 'script',
+        script_id: getScriptId(),
+      },
+    );
   }
 
   function getRegexesFromPreset() {
