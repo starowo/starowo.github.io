@@ -1,6 +1,7 @@
 // 全局唯一标记（页面内多次加载复用同一个 Symbol）
 const MARK = Symbol.for('plugin.regexPrefixProxyInfo');
-const sanitizeFileName = name => name.replace(/[\s.<>:"/\\|?*\x00-\x1F\x7F]/g, '_').toLowerCase();
+// eslint-disable-next-line no-control-regex
+const sanitizeFileName = name => name.replace(/[\s.<>:"/\\|?*\x00-\x1f\x7f]/g, '_').toLowerCase();
 function isOurs(val) {
   try {
     return !!(val && val[MARK] && val[MARK].isOurProxy);
@@ -232,6 +233,10 @@ function getFileText(file) {
     oldImportButton.remove();
     $('#import_regex_preset_file').remove();
   }
+  const oldSortButton = $('#sort_regexes');
+  if (oldSortButton.length !== 0) {
+    oldSortButton.remove();
+  }
   const newRegexButton = $(`
     <div id="open_preset_editor" class="menu_button menu_button_icon interactable" title="新的预设正则脚本" tabindex="0">
       <i class="fa-solid fa-file-circle-plus"></i>
@@ -250,6 +255,16 @@ function getFileText(file) {
   `);
 
   $('#import_regex').before(importButton);
+  const sortButton = $(`
+    <div id="sort_regexes" class="menu_button menu_button_icon">
+      <i class="fa-solid fa-sort"></i>
+      <small>预设正则排序</small>
+    </div>
+  `);
+  sortButton.on('click', async () => {
+    await popupSortPanel();
+  });
+  $('#import_regex').parent().append(sortButton);
   $('#import_regex_preset').on('click', () => {
     $('#import_regex_preset_file').click();
   });
@@ -307,27 +322,48 @@ function getFileText(file) {
     }
   });
 
-  window.regexBinding_onSortableStop = async function () {
-    if (window.__regexBinding_isSorting === 99) {
-      window.__regexBinding_isSorting = 0;
-      await renderPresetRegexes();
+  $('#bulk_export_regex').on('click', async function () {
+    const scripts = getSelectedScripts();
+    if (scripts.length === 0) {
       return;
     }
-    window.__regexBinding_isSorting = 0;
-    // 深拷贝
-    const oldScripts = JSON.parse(JSON.stringify(presetRegexes));
-    presetRegexes.length = 0;
-    $('#saved_preset_scripts')
-      .children()
-      .each(function () {
-        const id = $(this).attr('id');
-        const script = oldScripts.find(s => s.id === id);
-        if (script) {
-          presetRegexes.push(script);
-        }
-      });
-    saveRegexesToPreset(presetRegexes);
-    await renderPresetRegexes();
+    const json = JSON.stringify(scripts);
+    const fileName = '预设正则-' + SillyTavern.chatCompletionSettings.preset_settings_openai + '.json';
+    download(json, fileName, 'application/json');
+  });
+
+  window.regexBinding_onSortableStop = async function () {
+    try {
+      if (window.__regexBinding_isSorting === 99) {
+        window.__regexBinding_isSorting = 0;
+        await renderPresetRegexes();
+        return;
+      }
+      window.__regexBinding_isSorting = 0;
+      // 深拷贝
+      const oldScripts = JSON.parse(JSON.stringify(presetRegexes));
+      presetRegexes.length = 0;
+      $('#saved_preset_scripts')
+        .children()
+        .each(function () {
+          const id = $(this).attr('id');
+          const script = oldScripts.find(s => s.id === id);
+          if (script) {
+            presetRegexes.push(script);
+          }
+        });
+      saveRegexesToPreset(presetRegexes);
+      await renderPresetRegexes();
+    } catch (error) {
+      const confirm = await SillyTavern.callGenericPopup(
+        '预设绑定正则出现错误：' + error.message + '<br>点击确定复制错误信息到剪贴板<br>请将错误信息发送到原贴',
+        SillyTavern.POPUP_TYPE.CONFIRM,
+      );
+      if (confirm) {
+        navigator.clipboard.writeText(JSON.stringify(error, null, 2));
+        toastr.success('已复制错误信息到剪贴板');
+      }
+    }
   };
 
   window.regexBinding_onSortableStart = function () {
@@ -342,10 +378,10 @@ function getFileText(file) {
     childList: true,
     subtree: true,
   });
-  
+
   renderPresetRegexes();
   updateSTRegexes();
-/*
+  /*
   $('.regex_settings .collapse_regexes').on('click', function () {
     const icon = $(this).find('i');
     const scripts = $('#saved_preset_scripts');
@@ -361,60 +397,82 @@ function getFileText(file) {
     }
   });
   */
-  $('#saved_preset_scripts').sortable({
-    delay: SillyTavern.isMobile() ? 750 : 50,
-    start: window.regexBinding_onSortableStart,
-    stop: window.regexBinding_onSortableStop,
-  });
-  $('#saved_preset_scripts').sortable('enable');
+     try {
+    $('#saved_preset_scripts').sortable({
+      delay: SillyTavern.isMobile() ? 750 : 50,
+      start: window.regexBinding_onSortableStart,
+      stop: window.regexBinding_onSortableStop,
+    });
+    $('#saved_preset_scripts').sortable('enable');
+  } catch (error) {
+    const confirm = SillyTavern.callGenericPopup(
+      '预设绑定正则出现错误：' + error.message + '<br>点击确定复制错误信息到剪贴板<br>请将错误信息发送到原贴',
+      SillyTavern.POPUP_TYPE.CONFIRM,
+    );
+    if (confirm) {
+      navigator.clipboard.writeText(JSON.stringify(error, null, 2));
+      toastr.success('已复制错误信息到剪贴板');
+    }
+  }
 
   eventOn('settings_updated', () => {
-    const newPresetRegexes = getRegexesFromPreset();
-    const oldIdOrder = presetRegexes.map(s => s.id);
-    // check if newPresetRegexes is different from presetRegexes
-    let changed = false;
-    if (newPresetRegexes.length !== presetRegexes.length) {
-      changed = true;
-    } else {
-      for (let i = 0; i < presetRegexes.length; i++) {
-        if (newPresetRegexes[i].id !== presetRegexes[i].id) {
-          changed = true;
-          break;
-        }
-      }
-    }
-    /*
-    if (!extensions.regex[MARK]) {
-      reproxy(extensions, 'regex', presetRegexes);
-    }
-    */
-    if (changed || lockedRegexes.length > 0) {
-      presetRegexes.length = 0;
-      presetRegexes.push(...newPresetRegexes);
-      if (lockedRegexes.length > 0) {
-        const toAdd = [];
-        for (const regex of lockedRegexes) {
-          const index = presetRegexes.findIndex(s => s.id === regex.id);
-          if (index === -1) {
-            toAdd.push(regex);
-          } else {
-            presetRegexes[index] = regex;
+    try {
+      const newPresetRegexes = getRegexesFromPreset();
+      const oldIdOrder = presetRegexes.map(s => s.id);
+      // check if newPresetRegexes is different from presetRegexes
+      let changed = false;
+      if (newPresetRegexes.length !== presetRegexes.length) {
+        changed = true;
+      } else {
+        for (let i = 0; i < presetRegexes.length; i++) {
+          if (newPresetRegexes[i].id !== presetRegexes[i].id) {
+            changed = true;
+            break;
           }
         }
-        presetRegexes.unshift(...toAdd);
       }
-      saveRegexesToPreset(presetRegexes);
-    }
-    if (
-      !_.isEqual(
-        oldIdOrder,
-        presetRegexes.map(s => s.id),
-      )
-    ) {
-      renderPresetRegexesSafely();
-    }
-    if (changed) {
-      updateSTRegexes();
+      /*
+      if (!extensions.regex[MARK]) {
+        reproxy(extensions, 'regex', presetRegexes);
+      }
+      */
+      if (changed || lockedRegexes.length > 0) {
+        presetRegexes.length = 0;
+        presetRegexes.push(...newPresetRegexes);
+        if (lockedRegexes.length > 0) {
+          const toAdd = [];
+          for (const regex of lockedRegexes) {
+            const index = presetRegexes.findIndex(s => s.id === regex.id);
+            if (index === -1) {
+              toAdd.push(regex);
+            } else {
+              presetRegexes[index] = regex;
+            }
+          }
+          presetRegexes.unshift(...toAdd);
+        }
+        saveRegexesToPreset(presetRegexes);
+      }
+      if (
+        !_.isEqual(
+          oldIdOrder,
+          presetRegexes.map(s => s.id),
+        )
+      ) {
+        renderPresetRegexesSafely();
+      }
+      if (changed) {
+        updateSTRegexes();
+      }
+    } catch (error) {
+      const confirm = SillyTavern.callGenericPopup(
+        '预设绑定正则出现错误：' + error.message + '<br>点击确定复制错误信息到剪贴板<br>请将错误信息发送到原贴',
+        SillyTavern.POPUP_TYPE.CONFIRM,
+      );
+      if (confirm) {
+        navigator.clipboard.writeText(JSON.stringify(error, null, 2));
+        toastr.success('已复制错误信息到剪贴板');
+      }
     }
   });
 
@@ -735,31 +793,37 @@ function getFileText(file) {
     selectAllIcon.toggleClass('fa-minus', allAreChecked);
   }
   function injectPresetBlock(regex_settings) {
-    const htmlTemplate = `
-    <div id="preset_regexes_block" class="padding5">
-      <div>
-        <strong data-i18n="ext_regex_preset_regexes">预设绑定正则</strong>
+    try {
+      const htmlTemplate = `
+      <div id="preset_regexes_block" class="padding5">
+        <div>
+          <strong data-i18n="ext_regex_preset_regexes">预设绑定正则</strong>
+        </div>
+        <small data-i18n="ext_regex_preset_regexes_desc">
+          影响所有角色，保存在预设中。
+        </small>
+        <div id="saved_preset_scripts" no-scripts-text="No scripts found" data-i18n="[no-scripts-text]No scripts found" class="flex-container regex-script-container flexFlowColumn"></div>
       </div>
-      <small data-i18n="ext_regex_preset_regexes_desc">
-        影响所有角色，保存在预设中。
-      </small>
-      <div id="saved_preset_scripts" no-scripts-text="No scripts found" data-i18n="[no-scripts-text]No scripts found" class="flex-container regex-script-container flexFlowColumn"></div>
-    </div>
-    <hr />
-    `;
-    let block = regex_settings.find('#preset_regexes_block');
-    if (block.length === 0) {
-      block = $(htmlTemplate);
-      const global_scripts_block = regex_settings.find('#global_scripts_block');
-      global_scripts_block.before(block);
-      $('#saved_preset_scripts').sortable({
-        delay: SillyTavern.isMobile() ? 750 : 50,
-        start: window.regexBinding_onSortableStart,
-        stop: window.regexBinding_onSortableStop,
-      });
-      $('#saved_preset_scripts').sortable('enable');
+      <hr />
+      `;
+      let block = regex_settings.find('#preset_regexes_block');
+      if (block.length === 0) {
+        block = $(htmlTemplate);
+        const global_scripts_block = regex_settings.find('#global_scripts_block');
+        global_scripts_block.before(block);
+      }
+      return regex_settings.find('#preset_regexes_block');
+    } catch (error) {
+      const confirm = SillyTavern.callGenericPopup(
+        '预设绑定正则出现错误：' + error.message + '<br>点击确定复制错误信息到剪贴板<br>请将错误信息发送到原贴',
+        SillyTavern.POPUP_TYPE.CONFIRM,
+      );
+      if (confirm) {
+        navigator.clipboard.writeText(JSON.stringify(error, null, 2));
+        toastr.success('已复制错误信息到剪贴板');
+      }
+      return null;
     }
-    return regex_settings.find('#preset_regexes_block');
   }
 
   const substitute_find_regex = {
@@ -848,15 +912,15 @@ function getFileText(file) {
       const replaceString = regexScript.replaceString.replace(/{{match}}/gi, '$0');
       const replaceWithGroups = replaceString.replaceAll(/\$(\d+)/g, (_, num) => {
         // Get a full match or a capture group
-        const match = args[Number(num)];
+        const captureGroup = args[Number(num)];
 
         // No match found - return the empty string
-        if (!match) {
+        if (!captureGroup) {
           return '';
         }
 
         // Remove trim strings from the match
-        const filteredMatch = filterString(match, regexScript.trimStrings, { characterOverride });
+        const filteredMatch = filterString(captureGroup, regexScript.trimStrings, { characterOverride });
 
         // TODO: Handle overlay here
 
@@ -993,6 +1057,340 @@ function getFileText(file) {
       if (SillyTavern.getCurrentChatId()) {
         SillyTavern.reloadCurrentChat();
       }
+    }
+  }
+
+  async function popupSortPanel() {
+    const popupHtml = $(`
+      <div id="preset_regex_sort_panel">
+        <div class="regex_editor">
+          <h3 class="flex-container justifyCenter alignItemsBaseline">
+            <strong data-i18n="预设正则排序">预设正则排序</strong>
+            <div class="menu_button menu_button_icon" id="sort_help_button">
+              <i class="fa-solid fa-circle-info fa-sm"></i>
+              <span class="menu_button_text">使用说明</span>
+            </div>
+          </h3>
+
+          <small class="flex-container extensions_info">
+            通过上移/下移按钮调整预设正则的执行顺序。排序越靠前的正则执行优先级越高。
+          </small>
+          <hr />
+
+          <div class="flex-container flexFlowColumn" style="max-height: 400px; overflow-y: auto;">
+            <div id="sort_regex_list" class="flex-container flexFlowColumn">
+              <!-- 动态生成的正则列表 -->
+            </div>
+          </div>
+
+          <hr />
+          
+          <div class="flex-container justifySpaceEvenly flexWrap" style="gap: 5px;">
+            <div class="menu_button menu_button_icon" id="sort_select_all">
+              <i class="fa-solid fa-check-double"></i>
+              <span class="menu_button_text">全选</span>
+            </div>
+            <div class="menu_button menu_button_icon" id="sort_batch_up">
+              <i class="fa-solid fa-chevron-up"></i>
+              <span class="menu_button_text">批量上移</span>
+            </div>
+            <div class="menu_button menu_button_icon" id="sort_batch_down">
+              <i class="fa-solid fa-chevron-down"></i>
+              <span class="menu_button_text">批量下移</span>
+            </div>
+            <div class="menu_button menu_button_icon" id="sort_reverse_order">
+              <i class="fa-solid fa-arrow-rotate-left"></i>
+              <span class="menu_button_text">反转顺序</span>
+            </div>
+            <div class="menu_button menu_button_icon" id="sort_reset_order">
+              <i class="fa-solid fa-undo"></i>
+              <span class="menu_button_text">重置顺序</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    `);
+
+    // 渲染正则列表
+    function renderSortList() {
+      const listContainer = popupHtml.find('#sort_regex_list');
+      listContainer.empty();
+
+      if (presetRegexes.length === 0) {
+        listContainer.append(`
+          <div class="flex-container justifyCenter padding10">
+            <small style="color: #888;">暂无预设正则</small>
+          </div>
+        `);
+        return;
+      }
+
+      presetRegexes.forEach((regex, index) => {
+        const isLocked = lockedRegexes.findIndex(s => s.id === regex.id) !== -1;
+        const itemHtml = $(`
+          <div class="sort-item flex-container alignItemsCenter padding5" data-index="${index}" style="border: 1px solid #333; margin: 2px 0; border-radius: 4px; background: rgba(42, 42, 42, 0.3);">
+            <div class="flex1 flex-container alignItemsCenter">
+              <input type="checkbox" class="sort-checkbox" style="margin-right: 8px;" />
+              <div class="sort-handle" style="margin-right: 8px; cursor: grab; color: #666;">
+                <i class="fa-solid fa-grip-vertical"></i>
+              </div>
+              <div class="flex1" style="min-width: 0;">
+                <div class="sort-name" style="font-weight: bold; color: ${regex.disabled ? '#888' : '#fff'}; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">
+                  ${isLocked ? '[锁定] ' : ''}${regex.scriptName || '未命名'}
+                </div>
+                <div class="sort-status" style="font-size: 12px; color: #888;">
+                  ${regex.disabled ? '已禁用' : '已启用'} | 优先级: ${index + 1}
+                </div>
+              </div>
+            </div>
+            <div class="flex-container flexNoGap">
+              <div class="menu_button menu_button_icon sort-up ${index === 0 ? 'disabled' : ''}" data-index="${index}" title="上移">
+                <i class="fa-solid fa-chevron-up"></i>
+              </div>
+              <div class="menu_button menu_button_icon sort-down ${index === presetRegexes.length - 1 ? 'disabled' : ''}" data-index="${index}" title="下移">
+                <i class="fa-solid fa-chevron-down"></i>
+              </div>
+            </div>
+          </div>
+        `);
+        listContainer.append(itemHtml);
+      });
+
+      // 更新按钮状态
+      updateButtonStates();
+    }
+
+    // 更新按钮状态
+    function updateButtonStates() {
+      popupHtml.find('.sort-up').each(function(index) {
+        $(this).toggleClass('disabled', index === 0);
+      });
+      popupHtml.find('.sort-down').each(function(index) {
+        $(this).toggleClass('disabled', index === presetRegexes.length - 1);
+      });
+    }
+
+    // 上移操作
+    function moveUp(index) {
+      if (index > 0) {
+        const temp = presetRegexes[index];
+        presetRegexes[index] = presetRegexes[index - 1];
+        presetRegexes[index - 1] = temp;
+        renderSortList();
+      }
+    }
+
+    // 下移操作
+    function moveDown(index) {
+      if (index < presetRegexes.length - 1) {
+        const temp = presetRegexes[index];
+        presetRegexes[index] = presetRegexes[index + 1];
+        presetRegexes[index + 1] = temp;
+        renderSortList();
+      }
+    }
+
+    // 批量上移选中项
+    function moveSelectedUp() {
+      const selectedItems = [];
+      popupHtml.find('.sort-checkbox:checked').each(function() {
+        const index = parseInt($(this).closest('.sort-item').data('index'));
+        selectedItems.push({ index, regex: presetRegexes[index] });
+      });
+
+      if (selectedItems.length === 0) {
+        toastr.warning('请先选择要移动的项目');
+        return;
+      }
+
+      selectedItems.sort((a, b) => a.index - b.index); // 从小到大排序
+
+      // 检查最前面的项目是否已经在顶部
+      if (selectedItems[0].index === 0) {
+        toastr.info('选中的项目已经在最顶部');
+        return;
+      }
+
+      // 从前往后移动，避免索引混乱
+      let moved = false;
+      for (let i = 0; i < selectedItems.length; i++) {
+        const currentIndex = selectedItems[i].index - i; // 考虑前面已经移动的偏移
+        if (currentIndex > 0) {
+          const temp = presetRegexes[currentIndex];
+          presetRegexes[currentIndex] = presetRegexes[currentIndex - 1];
+          presetRegexes[currentIndex - 1] = temp;
+          moved = true;
+        }
+      }
+
+      if (moved) {
+        renderSortList();
+        // 重新选中移动后的项目
+        setTimeout(() => {
+          selectedItems.forEach(item => {
+            const newIndex = Math.max(0, item.index - 1);
+            popupHtml.find(`.sort-item[data-index="${newIndex}"] .sort-checkbox`).prop('checked', true);
+          });
+        }, 50);
+      }
+    }
+
+    // 批量下移选中项
+    function moveSelectedDown() {
+      const selectedItems = [];
+      popupHtml.find('.sort-checkbox:checked').each(function() {
+        const index = parseInt($(this).closest('.sort-item').data('index'));
+        selectedItems.push({ index, regex: presetRegexes[index] });
+      });
+
+      if (selectedItems.length === 0) {
+        toastr.warning('请先选择要移动的项目');
+        return;
+      }
+
+      selectedItems.sort((a, b) => b.index - a.index); // 从大到小排序
+
+      // 检查最后面的项目是否已经在底部
+      if (selectedItems[0].index === presetRegexes.length - 1) {
+        toastr.info('选中的项目已经在最底部');
+        return;
+      }
+
+      // 从后往前移动，避免索引混乱
+      let moved = false;
+      for (let i = 0; i < selectedItems.length; i++) {
+        const currentIndex = selectedItems[i].index + i; // 考虑前面已经移动的偏移
+        if (currentIndex < presetRegexes.length - 1) {
+          const temp = presetRegexes[currentIndex];
+          presetRegexes[currentIndex] = presetRegexes[currentIndex + 1];
+          presetRegexes[currentIndex + 1] = temp;
+          moved = true;
+        }
+      }
+
+      if (moved) {
+        renderSortList();
+        // 重新选中移动后的项目
+        setTimeout(() => {
+          selectedItems.forEach(item => {
+            const newIndex = Math.min(presetRegexes.length - 1, item.index + 1);
+            popupHtml.find(`.sort-item[data-index="${newIndex}"] .sort-checkbox`).prop('checked', true);
+          });
+        }, 50);
+      }
+    }
+
+    // 事件绑定
+    popupHtml.on('click', '.sort-up:not(.disabled)', function(e) {
+      e.stopPropagation();
+      const index = parseInt($(this).data('index'));
+      moveUp(index);
+    });
+
+    popupHtml.on('click', '.sort-down:not(.disabled)', function(e) {
+      e.stopPropagation();
+      const index = parseInt($(this).data('index'));
+      moveDown(index);
+    });
+
+    // 全选/取消全选
+    popupHtml.on('click', '#sort_select_all', function() {
+      const checkboxes = popupHtml.find('.sort-checkbox');
+      const allChecked = checkboxes.length === checkboxes.filter(':checked').length;
+      checkboxes.prop('checked', !allChecked);
+      $(this).find('i').toggleClass('fa-check-double', !allChecked).toggleClass('fa-minus', allChecked);
+      $(this).find('.menu_button_text').text(allChecked ? '全选' : '取消全选');
+    });
+
+    // 批量上移
+    popupHtml.on('click', '#sort_batch_up', function() {
+      moveSelectedUp();
+    });
+
+    // 批量下移
+    popupHtml.on('click', '#sort_batch_down', function() {
+      moveSelectedDown();
+    });
+
+    // 反转顺序
+    popupHtml.on('click', '#sort_reverse_order', function() {
+      presetRegexes.reverse();
+      renderSortList();
+    });
+
+    // 重置顺序（按名称排序）
+    popupHtml.on('click', '#sort_reset_order', function() {
+      presetRegexes.sort((a, b) => {
+        return (a.scriptName || '').localeCompare(b.scriptName || '');
+      });
+      renderSortList();
+    });
+
+    // 帮助说明
+    popupHtml.on('click', '#sort_help_button', function() {
+      SillyTavern.callGenericPopup(`
+        <div style="text-align: left;">
+          <h4>排序功能说明</h4>
+          <ul style="margin: 10px 0; padding-left: 20px;">
+            <li><strong>单项操作：</strong> 点击单个项目右侧的上移/下移按钮调整位置</li>
+            <li><strong>批量选择：</strong> 勾选多个项目的复选框，然后使用"批量上移"或"批量下移"按钮</li>
+            <li><strong>全选：</strong> 一键选择或取消选择所有项目</li>
+            <li><strong>反转顺序：</strong> 将当前列表完全颠倒</li>
+            <li><strong>重置顺序：</strong> 按照正则名称字母顺序重新排列</li>
+          </ul>
+          <h4>键盘快捷键</h4>
+          <ul style="margin: 10px 0; padding-left: 20px;">
+            <li><strong>Ctrl+A：</strong> 全选/取消全选</li>
+            <li><strong>Ctrl+↑：</strong> 批量上移选中项目</li>
+            <li><strong>Ctrl+↓：</strong> 批量下移选中项目</li>
+          </ul>
+          <p><strong>重要提示：</strong> 排序越靠前的正则执行优先级越高，会先于后面的正则处理文本。合理安排正则顺序可以避免冲突并提高处理效果。</p>
+        </div>
+      `, SillyTavern.POPUP_TYPE.TEXT);
+    });
+
+    // 键盘快捷键
+    popupHtml.on('keydown', function(e) {
+      if (e.ctrlKey || e.metaKey) {
+        switch(e.key) {
+          case 'a':
+            e.preventDefault();
+            popupHtml.find('#sort_select_all').click();
+            break;
+          case 'ArrowUp':
+            e.preventDefault();
+            moveSelectedUp();
+            break;
+          case 'ArrowDown':
+            e.preventDefault();
+            moveSelectedDown();
+            break;
+        }
+      }
+    });
+
+    // 初始渲染
+    renderSortList();
+
+    // 显示弹窗
+    const popupResult = await SillyTavern.callGenericPopup(popupHtml.get(0), SillyTavern.POPUP_TYPE.CONFIRM, '', {
+      okButton: '保存排序',
+      cancelButton: '取消',
+      allowVerticalScrolling: true,
+    });
+
+    if (popupResult) {
+      // 保存新的排序
+      saveRegexesToPreset(presetRegexes);
+      await renderPresetRegexes();
+      updateSTRegexes();
+      toastr.success('预设正则排序已保存');
+    } else {
+      // 取消时恢复原始顺序
+      const originalRegexes = getRegexesFromPreset();
+      presetRegexes.length = 0;
+      presetRegexes.push(...originalRegexes);
+      toastr.info('已取消排序操作');
     }
   }
 
