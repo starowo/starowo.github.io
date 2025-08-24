@@ -397,7 +397,7 @@ function getFileText(file) {
     }
   });
   */
-     try {
+  try {
     $('#saved_preset_scripts').sortable({
       delay: SillyTavern.isMobile() ? 750 : 50,
       start: window.regexBinding_onSortableStart,
@@ -730,6 +730,9 @@ function getFileText(file) {
           return;
         }
         presetRegexes.splice(index, 1);
+        if (_.remove(lockedRegexes, s => s.id === script.id)) {
+          saveLockedRegexes(lockedRegexes);
+        }
         await renderPresetRegexes();
         saveRegexesToPreset(presetRegexes);
         updateSTRegexes();
@@ -1135,7 +1138,9 @@ function getFileText(file) {
                 <i class="fa-solid fa-grip-vertical"></i>
               </div>
               <div class="flex1" style="min-width: 0;">
-                <div class="sort-name" style="font-weight: bold; color: ${regex.disabled ? '#888' : '#fff'}; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">
+                <div class="sort-name" style="font-weight: bold; color: ${
+                  regex.disabled ? '#888' : '#fff'
+                }; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">
                   ${isLocked ? '[锁定] ' : ''}${regex.scriptName || '未命名'}
                 </div>
                 <div class="sort-status" style="font-size: 12px; color: #888;">
@@ -1144,10 +1149,14 @@ function getFileText(file) {
               </div>
             </div>
             <div class="flex-container flexNoGap">
-              <div class="menu_button menu_button_icon sort-up ${index === 0 ? 'disabled' : ''}" data-index="${index}" title="上移">
+              <div class="menu_button menu_button_icon sort-up ${
+                index === 0 ? 'disabled' : ''
+              }" data-index="${index}" title="上移">
                 <i class="fa-solid fa-chevron-up"></i>
               </div>
-              <div class="menu_button menu_button_icon sort-down ${index === presetRegexes.length - 1 ? 'disabled' : ''}" data-index="${index}" title="下移">
+              <div class="menu_button menu_button_icon sort-down ${
+                index === presetRegexes.length - 1 ? 'disabled' : ''
+              }" data-index="${index}" title="下移">
                 <i class="fa-solid fa-chevron-down"></i>
               </div>
             </div>
@@ -1162,10 +1171,10 @@ function getFileText(file) {
 
     // 更新按钮状态
     function updateButtonStates() {
-      popupHtml.find('.sort-up').each(function(index) {
+      popupHtml.find('.sort-up').each(function (index) {
         $(this).toggleClass('disabled', index === 0);
       });
-      popupHtml.find('.sort-down').each(function(index) {
+      popupHtml.find('.sort-down').each(function (index) {
         $(this).toggleClass('disabled', index === presetRegexes.length - 1);
       });
     }
@@ -1193,7 +1202,7 @@ function getFileText(file) {
     // 批量上移选中项
     function moveSelectedUp() {
       const selectedItems = [];
-      popupHtml.find('.sort-checkbox:checked').each(function() {
+      popupHtml.find('.sort-checkbox:checked').each(function () {
         const index = parseInt($(this).closest('.sort-item').data('index'));
         selectedItems.push({ index, regex: presetRegexes[index] });
       });
@@ -1238,7 +1247,7 @@ function getFileText(file) {
     // 批量下移选中项
     function moveSelectedDown() {
       const selectedItems = [];
-      popupHtml.find('.sort-checkbox:checked').each(function() {
+      popupHtml.find('.sort-checkbox:checked').each(function () {
         const index = parseInt($(this).closest('.sort-item').data('index'));
         selectedItems.push({ index, regex: presetRegexes[index] });
       });
@@ -1281,45 +1290,47 @@ function getFileText(file) {
     }
 
     // 事件绑定
-    popupHtml.on('click', '.sort-up:not(.disabled)', function(e) {
+    popupHtml.on('click', '.sort-up:not(.disabled)', function (e) {
       e.stopPropagation();
       const index = parseInt($(this).data('index'));
       moveUp(index);
     });
 
-    popupHtml.on('click', '.sort-down:not(.disabled)', function(e) {
+    popupHtml.on('click', '.sort-down:not(.disabled)', function (e) {
       e.stopPropagation();
       const index = parseInt($(this).data('index'));
       moveDown(index);
     });
 
     // 全选/取消全选
-    popupHtml.on('click', '#sort_select_all', function() {
+    popupHtml.on('click', '#sort_select_all', function () {
       const checkboxes = popupHtml.find('.sort-checkbox');
       const allChecked = checkboxes.length === checkboxes.filter(':checked').length;
       checkboxes.prop('checked', !allChecked);
       $(this).find('i').toggleClass('fa-check-double', !allChecked).toggleClass('fa-minus', allChecked);
-      $(this).find('.menu_button_text').text(allChecked ? '全选' : '取消全选');
+      $(this)
+        .find('.menu_button_text')
+        .text(allChecked ? '全选' : '取消全选');
     });
 
     // 批量上移
-    popupHtml.on('click', '#sort_batch_up', function() {
+    popupHtml.on('click', '#sort_batch_up', function () {
       moveSelectedUp();
     });
 
     // 批量下移
-    popupHtml.on('click', '#sort_batch_down', function() {
+    popupHtml.on('click', '#sort_batch_down', function () {
       moveSelectedDown();
     });
 
     // 反转顺序
-    popupHtml.on('click', '#sort_reverse_order', function() {
+    popupHtml.on('click', '#sort_reverse_order', function () {
       presetRegexes.reverse();
       renderSortList();
     });
 
     // 重置顺序（按名称排序）
-    popupHtml.on('click', '#sort_reset_order', function() {
+    popupHtml.on('click', '#sort_reset_order', function () {
       presetRegexes.sort((a, b) => {
         return (a.scriptName || '').localeCompare(b.scriptName || '');
       });
@@ -1327,8 +1338,9 @@ function getFileText(file) {
     });
 
     // 帮助说明
-    popupHtml.on('click', '#sort_help_button', function() {
-      SillyTavern.callGenericPopup(`
+    popupHtml.on('click', '#sort_help_button', function () {
+      SillyTavern.callGenericPopup(
+        `
         <div style="text-align: left;">
           <h4>排序功能说明</h4>
           <ul style="margin: 10px 0; padding-left: 20px;">
@@ -1346,13 +1358,15 @@ function getFileText(file) {
           </ul>
           <p><strong>重要提示：</strong> 排序越靠前的正则执行优先级越高，会先于后面的正则处理文本。合理安排正则顺序可以避免冲突并提高处理效果。</p>
         </div>
-      `, SillyTavern.POPUP_TYPE.TEXT);
+      `,
+        SillyTavern.POPUP_TYPE.TEXT,
+      );
     });
 
     // 键盘快捷键
-    popupHtml.on('keydown', function(e) {
+    popupHtml.on('keydown', function (e) {
       if (e.ctrlKey || e.metaKey) {
-        switch(e.key) {
+        switch (e.key) {
           case 'a':
             e.preventDefault();
             popupHtml.find('#sort_select_all').click();
