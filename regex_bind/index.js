@@ -730,7 +730,9 @@ function getFileText(file) {
           return;
         }
         presetRegexes.splice(index, 1);
-        if (_.remove(lockedRegexes, s => s.id === script.id)) {
+        const i = lockedRegexes.findIndex(s => s.id === script.id);
+        if (i !== -1) {
+          lockedRegexes.splice(i, 1);
           saveLockedRegexes(lockedRegexes);
         }
         await renderPresetRegexes();
@@ -1552,7 +1554,7 @@ function getFileText(file) {
   }
 
   function saveLockedRegexes(regexes) {
-    if (!regexes) {
+    if (!regexes || regexes.length === 0) {
       deleteVariable('locked-regexes', {
         type: 'script',
         script_id: getScriptId(),
