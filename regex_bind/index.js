@@ -1552,6 +1552,13 @@ function getFileText(file) {
   }
 
   function saveLockedRegexes(regexes) {
+    if (!regexes) {
+      deleteVariable('locked-regexes', {
+        type: 'script',
+        script_id: getScriptId(),
+      });
+      return;
+    }
     insertOrAssignVariables(
       {
         'locked-regexes': regexes,
