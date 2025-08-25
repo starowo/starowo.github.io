@@ -398,12 +398,15 @@ function getFileText(file) {
   });
   */
   try {
-    $('#saved_preset_scripts').sortable({
-      delay: SillyTavern.isMobile() ? 750 : 50,
-      start: window.regexBinding_onSortableStart,
-      stop: window.regexBinding_onSortableStop,
-    });
-    $('#saved_preset_scripts').sortable('enable');
+    const dom_preset_scripts = $('#saved_preset_scripts')
+    if (dom_preset_scripts.sortable) {
+      dom_preset_scripts.sortable({
+        delay: SillyTavern.isMobile() ? 750 : 50,
+        start: window.regexBinding_onSortableStart,
+        stop: window.regexBinding_onSortableStop,
+      });
+      dom_preset_scripts.sortable('enable');
+    }
   } catch (error) {
     const confirm = SillyTavern.callGenericPopup(
       '预设绑定正则出现错误：' + error.message + '<br>点击确定复制错误信息到剪贴板<br>请将错误信息发送到原贴',
