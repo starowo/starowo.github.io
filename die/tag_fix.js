@@ -11,6 +11,9 @@ $(() => {
   const expectedTags = parseTags(previousMessage);
   const currentTags = parseTags(currentMessage);
 
+  console.log(expectedTags);
+  console.log(currentTags);
+
   const fixResult = fixTags(expectedTags, currentTags, currentMessage);
   if (fixResult.fixedTags.length > 0 || fixResult.missingTags.length > 0) {
     console.log(fixResult);
@@ -24,10 +27,12 @@ $(() => {
       suffix += `<p><small>${missingTag.tagName}</small></p>`;
     }
     suffix += '<hr />';
-    suffix += '<p><small>如果这是有意为之，请忽略此提示。如果这是错误，可以尝试打开左下角的菜单，点击“继续”</small></p>';
+    suffix +=
+      '<p><small>如果这是有意为之，请忽略此提示。如果这是错误，可以尝试打开左下角的菜单，点击“继续”</small></p>';
   }
   const fixedMessage = fixResult.fixedMessage + suffix;
-  setChatMessages([{
+  setChatMessages([
+    {
       message_id: id,
       message: fixedMessage,
     },
@@ -38,14 +43,20 @@ class XMLTagStructure {
   constructor(tag) {
     this.parent = null;
     this.children = [];
-    this.tagName = tag.match(/<([^>]+)>/)[1];
+    // 提取标签名：去掉< >，如果是闭合标签去掉/，然后提取第一个单词作为标签名
+    const tagContent = tag.slice(1, -1); // 去掉 < 和 >
+    const isClosingTag = tagContent.startsWith('/');
+    const cleanTagContent = isClosingTag ? tagContent.slice(1) : tagContent;
+    // 提取标签名（第一个单词，去掉属性）
+    this.tagName = cleanTagContent.split(/\s+/)[0];
     this.noClose = false;
   }
 }
 
 function parseTags(message) {
   /* parse all xml tags in message */
-  const tags = message.match(/<[^>]+>/g);
+  // 更严格的XML标签正则：标签名必须以字母或下划线开头，只能包含字母、数字、连字符、点号、下划线
+  const tags = message.match(/<\/?[a-zA-Z_][a-zA-Z0-9_\-.]*[^>]*>/g);
   const allTagStructures = [];
   const stack = []; // 用于跟踪标签层级关系
 
@@ -73,7 +84,8 @@ function parseTags(message) {
   for (const tag of tags) {
     if (tag.startsWith('</')) {
       // 闭合标签处理
-      const tagName = tag.match(/<\/([^>]+)>/)[1];
+      const tagContent = tag.slice(2, -1); // 去掉 </ 和 >
+      const tagName = tagContent.split(/\s+/)[0]; // 提取标签名（第一个单词）
 
       // 从栈中找到对应的开始标签
       let found = false;
