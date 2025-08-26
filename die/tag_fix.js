@@ -11,12 +11,12 @@ $(() => {
   const expectedTags = parseTags(previousMessage);
   const currentTags = parseTags(currentMessage);
 
-  console.log(expectedTags);
-  console.log(currentTags);
+  console.log(JSON.stringify(expectedTags));
+  console.log(JSON.stringify(currentTags));
 
   const fixResult = fixTags(expectedTags, currentTags, currentMessage);
   if (fixResult.fixedTags.length > 0 || fixResult.missingTags.length > 0) {
-    console.log(fixResult);
+    console.log(JSON.stringify(fixResult));
   } else {
     console.log('no fix');
   }
