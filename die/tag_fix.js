@@ -16,7 +16,7 @@ $(() => {
 
   const fixResult = fixTags(expectedTags, currentTags, currentMessage);
   if (fixResult.fixedTags.length > 0 || fixResult.missingTags.length > 0) {
-    console.log(fixResult);
+    console.log(fixResult.fixedMessage);
   } else {
     console.log('no fix');
   }
