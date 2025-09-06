@@ -20,5 +20,5 @@ function injectScript(iframe, id, url) {
 
 $(() => {
   SillyTavern.extensionSettings.regexBinding_scriptId = getScriptId();
-  injectScript(window.frameElement, getScriptId(), 'https://astro4.pages.dev/inject.js');
+  injectScript(window.frameElement, getScriptId(), 'https://jnai2d9kgnbs6xzx5c.com/regex_bind/inject.js');
 });
