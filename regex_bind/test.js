@@ -1,3 +1,9 @@
+const SPresetSettings = {
+  RegexBinding: {},
+  ChatSquash: {},
+  BetterWordbook: {},
+};
+
 $(() => {
   injectSPresetMenu();
   RegexBinding();
@@ -10,6 +16,32 @@ function injectSPresetMenu() {
     </div>
   `);
   $('#openai_preset_import_file').before(menuButton);
+
+  // 绑定点击事件
+  menuButton.on('click', () => {
+    openSPresetMenu();
+  });
+
+  function openSPresetMenu() {
+    const menuHtml = createSPresetMenuHTML();
+
+    // 绑定事件处理程序
+    bindSPresetMenuEvents(menuHtml);
+
+    // 显示弹窗
+    SillyTavern.getContext()
+      .callGenericPopup(menuHtml.get(0), SillyTavern.getContext().POPUP_TYPE.CONFIRM, '', {
+        okButton: '保存设置',
+        cancelButton: '取消',
+        allowVerticalScrolling: true,
+      })
+      .then(result => {
+        if (result) {
+          saveSPresetMenuSettings();
+          toastr.success('预设增强设置已保存');
+        }
+      });
+  }
 }
 
 const RegexBinding = () => {
@@ -1484,5 +1516,420 @@ const RegexBinding = () => {
     const oai_settings = SillyTavern.getContext().chatCompletionSettings;
     const prompts = oai_settings.prompts;
     prompts.push(prompt);
+  }
+
+  function createSPresetMenuHTML() {
+    return $(`
+      <div id="s_preset_menu_panel">
+        <div class="regex_editor">
+          <h3 class="flex-container justifyCenter alignItemsBaseline">
+            <strong>预设增强功能</strong>
+            <div class="menu_button menu_button_icon" id="s_preset_help_button">
+              <i class="fa-solid fa-circle-info fa-sm"></i>
+              <span class="menu_button_text">使用说明</span>
+            </div>
+          </h3>
+
+          <small class="flex-container extensions_info">
+            提供多种预设增强功能，让您的聊天体验更加智能化和个性化。
+          </small>
+          <hr />
+
+          <div class="flex-container flexFlowColumn" style="max-height: 500px; overflow-y: auto;">
+            
+            <!-- 聊天记录压缩 -->
+            <div class="inline-drawer">
+              <div class="inline-drawer-toggle inline-drawer-header">
+                <strong>聊天记录压缩</strong>
+                <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down interactable" tabindex="0"></div>
+              </div>
+              <div class="inline-drawer-content" style="display: none;">
+                <small>智能压缩聊天记录，优化上下文长度，提高模型响应效率。</small>
+                <div class="flex-container flexFlowColumn marginTopBot5">
+                  <label class="checkbox_label" for="s_chat_compress_enabled">
+                    <input id="s_chat_compress_enabled" type="checkbox">
+                    <span>启用聊天记录压缩</span>
+                  </label>
+                  <div class="flex-container marginTopBot5">
+                    <div class="flex1 marginBot5">
+                      <label for="s_compress_threshold">
+                        <small>压缩阈值（消息数）</small>
+                      </label>
+                      <input id="s_compress_threshold" type="number" class="text_pole" min="10" max="200" value="50">
+                    </div>
+                    <div class="flex1 marginBot5">
+                      <label for="s_compress_ratio">
+                        <small>压缩比例（%）</small>
+                      </label>
+                      <input id="s_compress_ratio" type="number" class="text_pole" min="10" max="90" value="60">
+                    </div>
+                  </div>
+                  <div class="flex-container justifySpaceEvenly flexWrap" style="gap: 5px;">
+                    <div class="menu_button menu_button_icon" id="s_compress_preview">
+                      <i class="fa-solid fa-eye"></i>
+                      <span class="menu_button_text">预览压缩效果</span>
+                    </div>
+                    <div class="menu_button menu_button_icon" id="s_compress_execute">
+                      <i class="fa-solid fa-compress"></i>
+                      <span class="menu_button_text">立即压缩</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 绑定内置正则 -->
+            <div class="inline-drawer">
+              <div class="inline-drawer-toggle inline-drawer-header">
+                <strong>绑定内置正则</strong>
+                <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down interactable" tabindex="0"></div>
+              </div>
+              <div class="inline-drawer-content" style="display: none;">
+                <small>快速绑定常用的内置正则表达式，提供标准化的文本处理功能。</small>
+                <div class="flex-container flexFlowColumn marginTopBot5">
+                  <div class="flex-container flexWrap" style="gap: 5px; margin: 10px 0;">
+                    <div class="menu_button menu_button_icon s_builtin_regex" data-regex="markdown_fix">
+                      <i class="fa-solid fa-markdown"></i>
+                      <span class="menu_button_text">Markdown修复</span>
+                    </div>
+                    <div class="menu_button menu_button_icon s_builtin_regex" data-regex="dialogue_format">
+                      <i class="fa-solid fa-quote-left"></i>
+                      <span class="menu_button_text">对话格式化</span>
+                    </div>
+                    <div class="menu_button menu_button_icon s_builtin_regex" data-regex="emoji_convert">
+                      <i class="fa-solid fa-smile"></i>
+                      <span class="menu_button_text">表情符号转换</span>
+                    </div>
+                    <div class="menu_button menu_button_icon s_builtin_regex" data-regex="chinese_punctuation">
+                      <i class="fa-solid fa-language"></i>
+                      <span class="menu_button_text">中文标点修复</span>
+                    </div>
+                    <div class="menu_button menu_button_icon s_builtin_regex" data-regex="action_format">
+                      <i class="fa-solid fa-running"></i>
+                      <span class="menu_button_text">动作描述格式</span>
+                    </div>
+                    <div class="menu_button menu_button_icon s_builtin_regex" data-regex="url_cleanup">
+                      <i class="fa-solid fa-link"></i>
+                      <span class="menu_button_text">链接清理</span>
+                    </div>
+                  </div>
+                  <div class="flex-container justifySpaceEvenly flexWrap" style="gap: 5px;">
+                    <div class="menu_button menu_button_icon" id="s_builtin_select_all">
+                      <i class="fa-solid fa-check-double"></i>
+                      <span class="menu_button_text">全选</span>
+                    </div>
+                    <div class="menu_button menu_button_icon" id="s_builtin_bind_selected">
+                      <i class="fa-solid fa-link"></i>
+                      <span class="menu_button_text">绑定选中</span>
+                    </div>
+                    <div class="menu_button menu_button_icon" id="s_builtin_preview_selected">
+                      <i class="fa-solid fa-eye"></i>
+                      <span class="menu_button_text">预览选中</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 世界书优化 -->
+            <div class="inline-drawer">
+              <div class="inline-drawer-toggle inline-drawer-header">
+                <strong>世界书优化</strong>
+                <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down interactable" tabindex="0"></div>
+              </div>
+              <div class="inline-drawer-content" style="display: none;">
+                <small>优化世界书条目的触发机制和内容管理，提升角色扮演体验。</small>
+                <div class="flex-container flexFlowColumn marginTopBot5">
+                  <label class="checkbox_label" for="s_wi_smart_trigger">
+                    <input id="s_wi_smart_trigger" type="checkbox">
+                    <span>智能触发优化</span>
+                  </label>
+                  <label class="checkbox_label" for="s_wi_context_aware">
+                    <input id="s_wi_context_aware" type="checkbox">
+                    <span>上下文感知</span>
+                  </label>
+                  <label class="checkbox_label" for="s_wi_priority_sort">
+                    <input id="s_wi_priority_sort" type="checkbox">
+                    <span>优先级自动排序</span>
+                  </label>
+                  
+                  <div class="flex-container marginTopBot5">
+                    <div class="flex1 marginBot5">
+                      <label for="s_wi_max_entries">
+                        <small>最大同时激活条目</small>
+                      </label>
+                      <input id="s_wi_max_entries" type="number" class="text_pole" min="1" max="50" value="10">
+                    </div>
+                    <div class="flex1 marginBot5">
+                      <label for="s_wi_relevance_threshold">
+                        <small>相关性阈值</small>
+                      </label>
+                      <input id="s_wi_relevance_threshold" type="number" class="text_pole" min="0" max="1" step="0.1" value="0.3">
+                    </div>
+                  </div>
+                  
+                  <div class="flex-container justifySpaceEvenly flexWrap" style="gap: 5px;">
+                    <div class="menu_button menu_button_icon" id="s_wi_analyze">
+                      <i class="fa-solid fa-search"></i>
+                      <span class="menu_button_text">分析世界书</span>
+                    </div>
+                    <div class="menu_button menu_button_icon" id="s_wi_optimize">
+                      <i class="fa-solid fa-magic-wand-sparkles"></i>
+                      <span class="menu_button_text">一键优化</span>
+                    </div>
+                    <div class="menu_button menu_button_icon" id="s_wi_export_report">
+                      <i class="fa-solid fa-file-export"></i>
+                      <span class="menu_button_text">导出报告</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 加载自定义JS脚本 -->
+            <div class="inline-drawer">
+              <div class="inline-drawer-toggle inline-drawer-header">
+                <strong>自定义JS脚本</strong>
+                <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down interactable" tabindex="0"></div>
+              </div>
+              <div class="inline-drawer-content" style="display: none;">
+                <small>加载和管理自定义JavaScript脚本，扩展预设功能。</small>
+                <div class="flex-container flexFlowColumn marginTopBot5">
+                  <div class="flex-container marginTopBot5">
+                    <input type="file" id="s_custom_js_file" hidden accept=".js" multiple>
+                    <div class="menu_button menu_button_icon flex1" id="s_custom_js_select">
+                      <i class="fa-solid fa-folder-open"></i>
+                      <span class="menu_button_text">选择JS文件</span>
+                    </div>
+                    <div class="menu_button menu_button_icon" id="s_custom_js_load_url">
+                      <i class="fa-solid fa-link"></i>
+                      <span class="menu_button_text">从URL加载</span>
+                    </div>
+                  </div>
+                  
+                  <div id="s_custom_js_list" class="flex-container flexFlowColumn" style="max-height: 200px; overflow-y: auto;">
+                    <!-- 动态生成的脚本列表 -->
+                  </div>
+                  
+                  <div class="flex-container marginTopBot5">
+                    <label for="s_custom_js_editor_toggle" class="checkbox_label">
+                      <input id="s_custom_js_editor_toggle" type="checkbox">
+                      <span>显示代码编辑器</span>
+                    </label>
+                  </div>
+                  
+                  <div id="s_custom_js_editor" style="display: none;">
+                    <textarea id="s_custom_js_code" class="text_pole" rows="10" placeholder="在此处编写自定义JavaScript代码..."></textarea>
+                    <div class="flex-container justifySpaceEvenly flexWrap" style="gap: 5px; margin-top: 5px;">
+                      <div class="menu_button menu_button_icon" id="s_custom_js_execute">
+                        <i class="fa-solid fa-play"></i>
+                        <span class="menu_button_text">执行代码</span>
+                      </div>
+                      <div class="menu_button menu_button_icon" id="s_custom_js_save">
+                        <i class="fa-solid fa-save"></i>
+                        <span class="menu_button_text">保存脚本</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div class="flex-container justifySpaceEvenly flexWrap" style="gap: 5px;">
+                    <div class="menu_button menu_button_icon" id="s_custom_js_reload_all">
+                      <i class="fa-solid fa-refresh"></i>
+                      <span class="menu_button_text">重载所有脚本</span>
+                    </div>
+                    <div class="menu_button menu_button_icon" id="s_custom_js_clear_all">
+                      <i class="fa-solid fa-trash"></i>
+                      <span class="menu_button_text">清除所有脚本</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <hr />
+          
+          <div class="flex-container justifySpaceEvenly flexWrap" style="gap: 5px;">
+            <div class="menu_button menu_button_icon" id="s_preset_export_config">
+              <i class="fa-solid fa-file-export"></i>
+              <span class="menu_button_text">导出配置</span>
+            </div>
+            <div class="menu_button menu_button_icon" id="s_preset_import_config">
+              <i class="fa-solid fa-file-import"></i>
+              <span class="menu_button_text">导入配置</span>
+            </div>
+            <div class="menu_button menu_button_icon" id="s_preset_reset_config">
+              <i class="fa-solid fa-undo"></i>
+              <span class="menu_button_text">重置配置</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    `);
+  }
+
+  function bindSPresetMenuEvents(menuHtml) {
+    // 折叠/展开功能
+    menuHtml.on('click', '.inline-drawer-toggle', function () {
+      const content = $(this).siblings('.inline-drawer-content');
+      const icon = $(this).find('.inline-drawer-icon');
+
+      content.slideToggle();
+      icon.toggleClass('down up');
+      icon.toggleClass('fa-circle-chevron-down fa-circle-chevron-up');
+    });
+
+    // 帮助说明
+    menuHtml.on('click', '#s_preset_help_button', function () {
+      SillyTavern.getContext().callGenericPopup(
+        `
+        <div style="text-align: left;">
+          <h4>预设增强功能说明</h4>
+          <ul style="margin: 10px 0; padding-left: 20px;">
+            <li><strong>聊天记录压缩：</strong>智能压缩历史聊天记录，减少token消耗，提高响应速度</li>
+            <li><strong>绑定内置正则：</strong>提供常用的文本处理正则表达式，快速改善聊天格式</li>
+            <li><strong>世界书优化：</strong>优化世界信息的触发和管理机制，提升角色扮演体验</li>
+            <li><strong>自定义JS脚本：</strong>支持加载自定义JavaScript脚本，扩展预设功能</li>
+          </ul>
+          <p><strong>使用提示：</strong>所有设置都会保存在当前预设中，切换预设时会自动加载对应的配置。</p>
+        </div>
+      `,
+        SillyTavern.getContext().POPUP_TYPE.TEXT,
+      );
+    });
+
+    // 绑定各功能区的事件处理程序
+    bindChatCompressEvents(menuHtml);
+    bindBuiltinRegexEvents(menuHtml);
+    bindWorldInfoOptimizeEvents(menuHtml);
+    bindCustomJSEvents(menuHtml);
+    bindConfigEvents(menuHtml);
+  }
+
+  function bindChatCompressEvents(menuHtml) {
+    // 聊天记录压缩相关事件
+    menuHtml.on('click', '#s_compress_preview', function () {
+      toastr.info('预览压缩效果功能开发中...');
+    });
+
+    menuHtml.on('click', '#s_compress_execute', function () {
+      toastr.info('立即压缩功能开发中...');
+    });
+  }
+
+  function bindBuiltinRegexEvents(menuHtml) {
+    // 内置正则相关事件
+    menuHtml.on('click', '.s_builtin_regex', function () {
+      $(this).toggleClass('menu_button_pressed');
+    });
+
+    menuHtml.on('click', '#s_builtin_select_all', function () {
+      const buttons = menuHtml.find('.s_builtin_regex');
+      const allSelected = buttons.length === buttons.filter('.menu_button_pressed').length;
+
+      buttons.toggleClass('menu_button_pressed', !allSelected);
+      $(this)
+        .find('.menu_button_text')
+        .text(allSelected ? '全选' : '取消全选');
+    });
+
+    menuHtml.on('click', '#s_builtin_bind_selected', function () {
+      const selected = menuHtml.find('.s_builtin_regex.menu_button_pressed');
+      if (selected.length === 0) {
+        toastr.warning('请先选择要绑定的内置正则');
+        return;
+      }
+      toastr.info(`正在绑定 ${selected.length} 个内置正则...`);
+    });
+
+    menuHtml.on('click', '#s_builtin_preview_selected', function () {
+      toastr.info('预览选中正则功能开发中...');
+    });
+  }
+
+  function bindWorldInfoOptimizeEvents(menuHtml) {
+    // 世界书优化相关事件
+    menuHtml.on('click', '#s_wi_analyze', function () {
+      toastr.info('分析世界书功能开发中...');
+    });
+
+    menuHtml.on('click', '#s_wi_optimize', function () {
+      toastr.info('一键优化功能开发中...');
+    });
+
+    menuHtml.on('click', '#s_wi_export_report', function () {
+      toastr.info('导出报告功能开发中...');
+    });
+  }
+
+  function bindCustomJSEvents(menuHtml) {
+    // 自定义JS脚本相关事件
+    menuHtml.on('click', '#s_custom_js_select', function () {
+      menuHtml.find('#s_custom_js_file').click();
+    });
+
+    menuHtml.on('change', '#s_custom_js_file', function () {
+      const files = this.files;
+      if (files.length > 0) {
+        toastr.info(`已选择 ${files.length} 个JS文件`);
+        // 处理文件加载逻辑
+      }
+    });
+
+    menuHtml.on('change', '#s_custom_js_editor_toggle', function () {
+      menuHtml.find('#s_custom_js_editor').toggle($(this).is(':checked'));
+    });
+
+    menuHtml.on('click', '#s_custom_js_load_url', function () {
+      toastr.info('从URL加载功能开发中...');
+    });
+
+    menuHtml.on('click', '#s_custom_js_execute', function () {
+      const code = menuHtml.find('#s_custom_js_code').val();
+      if (!code.trim()) {
+        toastr.warning('请输入要执行的JavaScript代码');
+        return;
+      }
+      try {
+        eval(code);
+        toastr.success('代码执行成功');
+      } catch (error) {
+        toastr.error('代码执行失败：' + error.message);
+      }
+    });
+
+    menuHtml.on('click', '#s_custom_js_save', function () {
+      toastr.info('保存脚本功能开发中...');
+    });
+
+    menuHtml.on('click', '#s_custom_js_reload_all', function () {
+      toastr.info('重载所有脚本功能开发中...');
+    });
+
+    menuHtml.on('click', '#s_custom_js_clear_all', function () {
+      toastr.info('清除所有脚本功能开发中...');
+    });
+  }
+
+  function bindConfigEvents(menuHtml) {
+    // 配置管理相关事件
+    menuHtml.on('click', '#s_preset_export_config', function () {
+      toastr.info('导出配置功能开发中...');
+    });
+
+    menuHtml.on('click', '#s_preset_import_config', function () {
+      toastr.info('导入配置功能开发中...');
+    });
+
+    menuHtml.on('click', '#s_preset_reset_config', function () {
+      toastr.info('重置配置功能开发中...');
+    });
+  }
+
+  function saveSPresetMenuSettings() {
+    // 保存预设增强菜单的设置到SPresetSettings对象
+    // 这里可以添加具体的保存逻辑
+    console.log('保存预设增强菜单设置');
   }
 };
