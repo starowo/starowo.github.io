@@ -1,52 +1,30 @@
+// 预设增强功能配置
+// 将对应模块设置为 true 以启用该功能在菜单中显示
 const SPresetSettings = {
-  RegexBinding: {},
-  ChatSquash: {},
-  BetterWordbook: {},
+  RegexBinding: true, // 绑定内置正则功能
+  ChatSquash: false, // 聊天压缩功能（待开发）
+  BetterWordbook: false, // 增强词典功能（待开发）
 };
 
-// 预设增强模块注册系统
-const SPresetModules = {
-  _modules: new Map(),
-  
-  // 注册模块
-  register(moduleId, moduleConfig) {
-    if (typeof moduleConfig !== 'object' || typeof moduleConfig.render !== 'function') {
-      console.error('Invalid module config for', moduleId);
-      return;
-    }
-    
-    this._modules.set(moduleId, {
-      id: moduleId,
-      name: moduleConfig.name || moduleId,
-      description: moduleConfig.description || '',
-      render: moduleConfig.render,
-      onSave: moduleConfig.onSave || (() => {}),
-      enabled: moduleConfig.enabled || false,
-      order: moduleConfig.order || 100,
-      ...moduleConfig
-    });
-  },
-  
-  // 获取所有已注册的模块
-  getAll() {
-    return Array.from(this._modules.values()).sort((a, b) => a.order - b.order);
-  },
-  
-  // 获取指定模块
-  get(moduleId) {
-    return this._modules.get(moduleId);
-  },
-  
-  // 注销模块
-  unregister(moduleId) {
-    this._modules.delete(moduleId);
-  }
-};
+const menuDom = $(`
+  <div class="s_preset_settings">
+    <div class="inline-drawer">
+      <div class="inline-drawer-toggle inline-drawer-header">
+        <b>
+          预设增强功能
+        </b>
+        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+      </div>
+      <div class="inline-drawer-content">
+        <div id="s_preset_menu_sections" class="flex-container flexFlowColumn">
+          <!-- 动态添加的功能模块将插入这里 -->
+        </div>
+      </div>
+    </div>
+  </div>
+`);
 
 $(() => {
-  // 注册默认模块
-  registerDefaultModules();
-  
   injectSPresetMenu();
   RegexBinding();
 });
@@ -58,120 +36,190 @@ function injectSPresetMenu() {
     </div>
   `);
   $('#openai_preset_import_file').before(menuButton);
-  
-  // 绑定点击事件
+
+  // 添加菜单展开/收起功能
+  menuDom.find('.inline-drawer-toggle').on('click', function () {
+    const content = menuDom.find('.inline-drawer-content');
+    const icon = menuDom.find('.inline-drawer-icon');
+
+    if (content.is(':visible')) {
+      content.hide();
+      icon.removeClass('up').addClass('down');
+    } else {
+      content.show();
+      icon.removeClass('down').addClass('up');
+    }
+  });
+
+  // 绑定菜单按钮点击事件
   menuButton.on('click', openSPresetMenu);
 
-  async function openSPresetMenu() {
-    const menuHtml = createSPresetMenuHtml();
-    
-    const popupResult = await SillyTavern.getContext().callGenericPopup(
-      menuHtml.get(0),
-      SillyTavern.getContext().POPUP_TYPE.CONFIRM,
-      '',
-      {
-        okButton: '保存设置',
-        cancelButton: '取消',
-        allowVerticalScrolling: true,
-        wide: true
-      }
-    );
-    
-    if (popupResult) {
-      // 保存所有模块的设置
-      saveSPresetSettings(menuHtml);
-      toastr.success('预设增强设置已保存');
-    }
+  function openSPresetMenu() {
+    // 确保展开状态
+    const content = menuDom.find('.inline-drawer-content');
+    const icon = menuDom.find('.inline-drawer-icon');
+    content.show();
+    icon.removeClass('down').addClass('up');
+
+    SillyTavern.getContext().callGenericPopup(menuDom.get(0), SillyTavern.getContext().POPUP_TYPE.DISPLAY);
   }
-  
-  function createSPresetMenuHtml() {
-    const menuHtml = $(`
-      <div id="s_preset_settings" class="s_preset_settings">
-        <div class="inline-drawer">
-          <div class="inline-drawer-toggle inline-drawer-header">
-            <b>预设增强功能</b>
-            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-          </div>
-          <div class="inline-drawer-content">
-            <div id="s_preset_modules_container">
-              <!-- 动态添加的模块内容将在这里 -->
-            </div>
-          </div>
-        </div>
+
+  // 初始化所有功能模块
+  initializeMenuSections();
+}
+
+// 添加功能模块到菜单的函数
+function addMenuSection(sectionId, title, description, content) {
+  const sectionHtml = $(`
+    <div id="${sectionId}_section" class="padding5">
+      <div>
+        <strong>${title}</strong>
       </div>
-    `);
-    
-    // 动态渲染所有已注册的模块
-    const modulesContainer = menuHtml.find('#s_preset_modules_container');
-    const registeredModules = SPresetModules.getAll();
-    
-    if (registeredModules.length === 0) {
-      modulesContainer.append(`
-        <div class="padding10 text-center">
-          <small style="color: #888;">暂无可用的增强功能模块</small>
-        </div>
-      `);
-    } else {
-      registeredModules.forEach(module => {
-        try {
-          const moduleHtml = module.render();
-          if (moduleHtml) {
-            modulesContainer.append(moduleHtml);
-          }
-        } catch (error) {
-          console.error(`Error rendering module ${module.id}:`, error);
-          modulesContainer.append(`
-            <div class="padding10 text-center" style="color: #f88;">
-              <small>模块 "${module.name}" 加载失败</small>
-            </div>
-          `);
-        }
-      });
+      <small>${description}</small>
+      <div class="flex-container">
+        ${content}
+      </div>
+    </div>
+    <hr />
+  `);
+
+  menuDom.find('#s_preset_menu_sections').append(sectionHtml);
+}
+
+// 初始化所有功能模块
+function initializeMenuSections() {
+  // 清空现有内容
+  menuDom.find('#s_preset_menu_sections').empty();
+
+  // 添加绑定内置正则模块
+  if (SPresetSettings.RegexBinding) {
+    addRegexBindingSection();
+  }
+
+  // 未来可以在这里添加更多模块
+  // if (SPresetSettings.ChatSquash) {
+  //   addChatSquashSection();
+  // }
+  // if (SPresetSettings.BetterWordbook) {
+  //   addBetterWordbookSection();
+  // }
+}
+
+// 示例：添加新功能模块的模板
+// function addChatSquashSection() {
+//   const buttons = `
+//     <div class="menu_button menu_button_icon" id="chat_squash_settings" title="聊天压缩设置">
+//       <i class="fa-solid fa-compress"></i>
+//       <small>压缩设置</small>
+//     </div>
+//     <div class="menu_button menu_button_icon" id="chat_squash_help" title="聊天压缩帮助">
+//       <i class="fa-solid fa-circle-question"></i>
+//       <small>使用帮助</small>
+//     </div>
+//   `;
+//
+//   addMenuSection(
+//     'chat_squash',
+//     '聊天压缩',
+//     '智能压缩长对话，节省上下文空间。',
+//     buttons
+//   );
+//
+//   // 绑定事件
+//   menuDom.find('#chat_squash_settings').on('click', function() {
+//     // 处理设置点击
+//   });
+//
+//   menuDom.find('#chat_squash_help').on('click', function() {
+//     // 显示帮助信息
+//   });
+// }
+
+// 绑定内置正则模块的菜单项
+function addRegexBindingSection() {
+  const regexButtons = `
+    <div class="menu_button menu_button_icon" id="manage_preset_regexes" title="管理预设绑定正则">
+      <i class="fa-solid fa-cogs"></i>
+      <small>管理正则</small>
+    </div>
+    <div class="menu_button menu_button_icon" id="regex_binding_help" title="绑定正则使用说明">
+      <i class="fa-solid fa-circle-info"></i>
+      <small>使用说明</small>
+    </div>
+  `;
+
+  addMenuSection('regex_binding', '绑定内置正则', '将正则表达式绑定到预设中，影响所有使用此预设的角色。', regexButtons);
+
+  // 绑定事件处理
+  menuDom.find('#manage_preset_regexes').on('click', function () {
+    // 关闭菜单并跳转到正则设置
+    $('.popup-button-ok').click(); // 关闭当前弹窗
+
+    // 展开正则设置面板
+    const regexSettings = $('.regex_settings');
+    if (regexSettings.length > 0) {
+      const drawer = regexSettings.find('.inline-drawer-toggle');
+      const content = regexSettings.find('.inline-drawer-content');
+      const icon = regexSettings.find('.inline-drawer-icon');
+
+      if (!content.is(':visible')) {
+        drawer.click();
+      }
+
+      // 滚动到正则设置区域
+      regexSettings[0].scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
-    
-    // 绑定drawer折叠事件
-    bindDrawerEvents(menuHtml);
-    
-    return menuHtml;
-  }
-  
-  
-  function bindDrawerEvents(menuHtml) {
-    menuHtml.find('.inline-drawer-toggle').on('click', function() {
-      const drawer = $(this).parent();
-      const content = drawer.find('.inline-drawer-content');
-      const icon = $(this).find('.inline-drawer-icon');
+  });
+
+  menuDom.find('#regex_binding_help').on('click', function () {
+    showRegexBindingHelp();
+  });
+}
+
+// 显示绑定正则使用说明
+function showRegexBindingHelp() {
+  const helpContent = `
+    <div style="text-align: left; max-height: 400px; overflow-y: auto;">
+      <h4>预设绑定正则功能说明</h4>
       
-      if (content.is(':visible')) {
-        content.slideUp();
-        icon.removeClass('down').addClass('up');
-      } else {
-        content.slideDown();
-        icon.removeClass('up').addClass('down');
-      }
-    });
-  }
-  
-  function saveSPresetSettings(menuHtml) {
-    // 调用所有已注册模块的保存方法
-    const registeredModules = SPresetModules.getAll();
-    
-    registeredModules.forEach(module => {
-      try {
-        if (typeof module.onSave === 'function') {
-          const moduleSettings = module.onSave(menuHtml);
-          if (moduleSettings !== undefined) {
-            SPresetSettings[module.id] = moduleSettings;
-          }
-        }
-      } catch (error) {
-        console.error(`Error saving settings for module ${module.id}:`, error);
-      }
-    });
-    
-    // 这里可以添加将设置保存到预设的逻辑
-    console.log('保存预设增强设置:', SPresetSettings);
-  }
+      <h5>🎯 主要功能</h5>
+      <ul style="margin: 10px 0; padding-left: 20px;">
+        <li><strong>预设绑定：</strong> 将正则表达式直接保存在预设中，而不是全局设置</li>
+        <li><strong>角色无关：</strong> 绑定的正则会影响所有使用此预设的角色</li>
+        <li><strong>正则锁定：</strong> 可以锁定重要的正则，防止预设切换时丢失</li>
+        <li><strong>批量管理：</strong> 支持批量启用、禁用和导出正则</li>
+      </ul>
+      
+      <h5>📝 使用步骤</h5>
+      <ol style="margin: 10px 0; padding-left: 20px;">
+        <li><strong>创建正则：</strong> 点击"新建预设正则"创建新的正则规则</li>
+        <li><strong>绑定现有：</strong> 在全局正则列表中点击"↑"按钮将正则绑定到当前预设</li>
+        <li><strong>管理顺序：</strong> 使用"预设正则排序"调整正则执行顺序</li>
+        <li><strong>锁定保护：</strong> 点击🔒按钮锁定重要正则，防止丢失</li>
+        <li><strong>保存预设：</strong> 记得保存预设以防正则丢失</li>
+      </ol>
+      
+      <h5>⚠️ 重要提示</h5>
+      <ul style="margin: 10px 0; padding-left: 20px; color: #ff6b6b;">
+        <li>预设绑定的正则保存在预设文件中，切换预设时会自动加载对应的正则</li>
+        <li>修改后请及时保存预设，否则可能丢失更改</li>
+        <li>正则执行顺序很重要，排序靠前的正则会先执行</li>
+        <li>锁定的正则不会因预设切换而丢失，适用于通用规则</li>
+      </ul>
+      
+      <h5>🔧 高级功能</h5>
+      <ul style="margin: 10px 0; padding-left: 20px;">
+        <li><strong>批量操作：</strong> 选中多个正则后可以批量启用、禁用或导出</li>
+        <li><strong>排序功能：</strong> 支持拖拽排序、批量移动、反转顺序等</li>
+        <li><strong>导入导出：</strong> 可以导出正则配置与他人分享</li>
+        <li><strong>实时预览：</strong> 编辑正则时可以实时测试效果</li>
+      </ul>
+    </div>
+  `;
+
+  SillyTavern.getContext().callGenericPopup(helpContent, SillyTavern.getContext().POPUP_TYPE.TEXT, '', {
+    okButton: '我知道了',
+  });
 }
 
 const RegexBinding = () => {
@@ -1648,275 +1696,3 @@ const RegexBinding = () => {
     prompts.push(prompt);
   }
 };
-
-// 注册默认模块
-function registerDefaultModules() {
-  // 注册聊天记录压缩模块
-  SPresetModules.register('ChatSquash', {
-    name: '聊天记录压缩',
-    description: '自动压缩较长的聊天记录以节省token使用量',
-    order: 10,
-    render() {
-      const moduleHtml = $(`
-        <div id="chat_squash_module" class="s_preset_module padding5">
-          <div class="inline-drawer">
-            <div class="inline-drawer-toggle inline-drawer-header">
-              <b>聊天记录压缩</b>
-              <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-            </div>
-            <div class="inline-drawer-content">
-              <div class="flex-container">
-                <label class="checkbox flex-container">
-                  <input type="checkbox" id="enable_chat_squash" />
-                  <span>启用聊天记录压缩</span>
-                </label>
-              </div>
-              <small class="extensions_info">
-                自动压缩较长的聊天记录以节省token使用量。
-              </small>
-              <div class="padding5">
-                <label for="chat_squash_threshold">压缩阈值（消息数量）：</label>
-                <input type="number" id="chat_squash_threshold" min="10" max="100" value="50" class="text_pole" />
-              </div>
-              <div class="padding5">
-                <label for="chat_squash_ratio">压缩比例（%）：</label>
-                <input type="range" id="chat_squash_ratio" min="10" max="90" value="50" class="text_pole" />
-                <span id="chat_squash_ratio_display">50%</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <hr />
-      `);
-      
-      // 绑定滑块事件
-      moduleHtml.find('#chat_squash_ratio').on('input', function() {
-        moduleHtml.find('#chat_squash_ratio_display').text($(this).val() + '%');
-      });
-      
-      return moduleHtml;
-    },
-    onSave(menuHtml) {
-      return {
-        enabled: menuHtml.find('#enable_chat_squash').prop('checked'),
-        threshold: parseInt(menuHtml.find('#chat_squash_threshold').val()) || 50,
-        ratio: parseInt(menuHtml.find('#chat_squash_ratio').val()) || 50
-      };
-    }
-  });
-
-  // 注册绑定内置正则模块
-  SPresetModules.register('RegexBinding', {
-    name: '绑定内置正则',
-    description: '将正则表达式绑定到预设中，支持导入导出和锁定功能',
-    order: 20,
-    render() {
-      const moduleHtml = $(`
-        <div id="regex_binding_module" class="s_preset_module padding5">
-          <div class="inline-drawer">
-            <div class="inline-drawer-toggle inline-drawer-header">
-              <b>绑定内置正则</b>
-              <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-            </div>
-            <div class="inline-drawer-content">
-              <div class="flex-container">
-                <label class="checkbox flex-container">
-                  <input type="checkbox" id="enable_regex_binding" checked />
-                  <span>启用正则绑定</span>
-                </label>
-              </div>
-              <small class="extensions_info">
-                将正则表达式绑定到预设中，支持导入导出和锁定功能。
-              </small>
-              <div class="flex-container padding5">
-                <div class="menu_button menu_button_icon" id="regex_binding_settings">
-                  <i class="fa-solid fa-cog"></i>
-                  <small>高级设置</small>
-                </div>
-                <div class="menu_button menu_button_icon" id="regex_binding_help">
-                  <i class="fa-solid fa-question-circle"></i>
-                  <small>使用帮助</small>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <hr />
-      `);
-      
-      // 绑定设置按钮事件
-      moduleHtml.find('#regex_binding_settings').on('click', function() {
-        SillyTavern.getContext().callGenericPopup(
-          '正则绑定高级设置功能开发中...',
-          SillyTavern.getContext().POPUP_TYPE.TEXT
-        );
-      });
-      
-      // 绑定帮助按钮事件  
-      moduleHtml.find('#regex_binding_help').on('click', function() {
-        SillyTavern.getContext().callGenericPopup(
-          '<div style="text-align: left;">' +
-          '<h4>正则绑定功能说明</h4>' +
-          '<ul style="margin: 10px 0; padding-left: 20px;">' +
-          '<li><strong>绑定到预设：</strong> 正则表达式将保存到当前预设中，切换预设时自动加载对应的正则</li>' +
-          '<li><strong>锁定正则：</strong> 被锁定的正则会在所有预设中生效，不会因切换预设而丢失</li>' +
-          '<li><strong>导入导出：</strong> 支持批量导入导出正则配置，方便备份和分享</li>' +
-          '<li><strong>排序功能：</strong> 可以调整正则执行顺序，优化处理效果</li>' +
-          '</ul>' +
-          '<p><strong>注意：</strong> 记得保存预设以防正则丢失喵~</p>' +
-          '</div>',
-          SillyTavern.getContext().POPUP_TYPE.TEXT
-        );
-      });
-      
-      return moduleHtml;
-    },
-    onSave(menuHtml) {
-      return {
-        enabled: menuHtml.find('#enable_regex_binding').prop('checked')
-      };
-    }
-  });
-
-  // 注册世界书优化模块
-  SPresetModules.register('BetterWordbook', {
-    name: '世界书优化',
-    description: '优化世界书的触发机制和内容管理，提高AI理解效果',
-    order: 30,
-    render() {
-      const moduleHtml = $(`
-        <div id="better_wordbook_module" class="s_preset_module padding5">
-          <div class="inline-drawer">
-            <div class="inline-drawer-toggle inline-drawer-header">
-              <b>世界书优化</b>
-              <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-            </div>
-            <div class="inline-drawer-content">
-              <div class="flex-container">
-                <label class="checkbox flex-container">
-                  <input type="checkbox" id="enable_better_wordbook" />
-                  <span>启用世界书优化</span>
-                </label>
-              </div>
-              <small class="extensions_info">
-                优化世界书的触发机制和内容管理，提高AI理解效果。
-              </small>
-              <div class="padding5">
-                <label class="checkbox flex-container">
-                  <input type="checkbox" id="wordbook_smart_trigger" />
-                  <span>智能触发优化</span>
-                </label>
-                <small>根据上下文智能判断是否需要触发世界书条目</small>
-              </div>
-              <div class="padding5">
-                <label class="checkbox flex-container">
-                  <input type="checkbox" id="wordbook_content_merge" />
-                  <span>内容合并优化</span>
-                </label>
-                <small>自动合并相关的世界书条目，避免重复内容</small>
-              </div>
-              <div class="padding5">
-                <label for="wordbook_priority_mode">优先级模式：</label>
-                <select id="wordbook_priority_mode" class="text_pole">
-                  <option value="default">默认</option>
-                  <option value="importance">重要性优先</option>
-                  <option value="relevance">相关性优先</option>
-                  <option value="custom">自定义排序</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        </div>
-        <hr />
-      `);
-      
-      return moduleHtml;
-    },
-    onSave(menuHtml) {
-      return {
-        enabled: menuHtml.find('#enable_better_wordbook').prop('checked'),
-        smartTrigger: menuHtml.find('#wordbook_smart_trigger').prop('checked'),
-        contentMerge: menuHtml.find('#wordbook_content_merge').prop('checked'),
-        priorityMode: menuHtml.find('#wordbook_priority_mode').val()
-      };
-    }
-  });
-
-  // 注册自定义脚本模块
-  SPresetModules.register('CustomScript', {
-    name: '自定义脚本',
-    description: '加载和执行自定义JavaScript脚本，扩展预设功能',
-    order: 40,
-    render() {
-      const moduleHtml = $(`
-        <div id="custom_script_module" class="s_preset_module padding5">
-          <div class="inline-drawer">
-            <div class="inline-drawer-toggle inline-drawer-header">
-              <b>自定义脚本</b>
-              <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-            </div>
-            <div class="inline-drawer-content">
-              <div class="flex-container">
-                <label class="checkbox flex-container">
-                  <input type="checkbox" id="enable_custom_script" />
-                  <span>启用自定义脚本</span>
-                </label>
-              </div>
-              <small class="extensions_info">
-                加载和执行自定义JavaScript脚本，扩展预设功能。
-              </small>
-              <div class="flex-container padding5">
-                <div class="menu_button menu_button_icon" id="add_custom_script">
-                  <i class="fa-solid fa-plus"></i>
-                  <small>添加脚本</small>
-                </div>
-                <div class="menu_button menu_button_icon" id="import_custom_script">
-                  <i class="fa-solid fa-file-import"></i>
-                  <small>导入脚本</small>
-                </div>
-                <input type="file" id="import_custom_script_file" hidden accept="*.js" multiple />
-              </div>
-              <div id="custom_scripts_list" class="padding5">
-                <small style="color: #888;">暂无自定义脚本</small>
-              </div>
-              <div class="padding5">
-                <label class="checkbox flex-container">
-                  <input type="checkbox" id="custom_script_auto_load" />
-                  <span>自动加载脚本</span>
-                </label>
-                <small>切换预设时自动加载对应的自定义脚本</small>
-              </div>
-            </div>
-          </div>
-        </div>
-      `);
-      
-      // 绑定添加脚本事件
-      moduleHtml.find('#add_custom_script').on('click', function() {
-        SillyTavern.getContext().callGenericPopup(
-          '自定义脚本编辑器功能开发中...',
-          SillyTavern.getContext().POPUP_TYPE.TEXT
-        );
-      });
-      
-      // 绑定导入脚本事件
-      moduleHtml.find('#import_custom_script').on('click', function() {
-        moduleHtml.find('#import_custom_script_file').click();
-      });
-      
-      moduleHtml.find('#import_custom_script_file').on('change', function(e) {
-        // 处理脚本导入逻辑
-        toastr.info('脚本导入功能开发中...');
-        e.target.value = '';
-      });
-      
-      return moduleHtml;
-    },
-    onSave(menuHtml) {
-      return {
-        enabled: menuHtml.find('#enable_custom_script').prop('checked'),
-        autoLoad: menuHtml.find('#custom_script_auto_load').prop('checked')
-      };
-    }
-  });
-}
