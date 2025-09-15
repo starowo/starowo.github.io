@@ -281,6 +281,9 @@ function reloadSettings() {
   const defaultGlobalSettings = {
     RegexBinding: {},
   };
+  if (!ctx.chatCompletionSettings.extensions) {
+    ctx.chatCompletionSettings.extensions = {};
+  }
   const temp1 = ctx.chatCompletionSettings.extensions.SPreset;
   if (temp1 && !temp1.ChatSquash) {
     temp1.ChatSquash = defaultPresetSettings.ChatSquash;
@@ -372,6 +375,9 @@ const MacroNest = () => {
   const menu = addMenuSection('macro_nest', '宏嵌套', macroNestMenuItems);
   menu.find('#macro_nest_enabled').on('change', function () {
     SPresetSettings.MacroNest = this.checked;
+    if (!ctx.chatCompletionSettings.extensions) {
+      ctx.chatCompletionSettings.extensions = {};
+    }
     ctx.chatCompletionSettings.extensions.SPreset = SPresetSettings;
     ctx.saveSettingsDebounced();
   });
@@ -577,6 +583,9 @@ const ChatSquash = () => {
     SPresetSettings.ChatSquash.squashed_separator_string = menu.find('#squashed_separator_string').val();
     SPresetSettings.ChatSquash.squashed_post_script_enable = menu.find('#squashed_post_script_enable').prop('checked');
     SPresetSettings.ChatSquash.squashed_post_script = menu.find('#squashed_post_script').val();
+    if (!ctx.chatCompletionSettings.extensions) {
+      ctx.chatCompletionSettings.extensions = {};
+    }
     ctx.chatCompletionSettings.extensions.SPreset = SPresetSettings;
     ctx.saveSettingsDebounced();
   }
@@ -2270,6 +2279,9 @@ const RegexBinding = () => {
       s => !lockedRegexes.find(l => l.id === s.id) || currentRegexes.find(c => c.id === s.id),
     );
     SPresetSettings.RegexBinding.regexes = newRegexes;
+    if (!ctx.chatCompletionSettings.extensions) {
+      ctx.chatCompletionSettings.extensions = {};
+    }
     ctx.chatCompletionSettings.extensions.SPreset = SPresetSettings;
     ctx.saveSettingsDebounced();
   }
