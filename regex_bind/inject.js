@@ -2265,7 +2265,7 @@ const RegexBinding = () => {
   }
 
   function getRegexesFromPreset() {
-    if (SPresetSettings.RegexBinding.regexes) {
+    if (SPresetSettings.RegexBinding.regexes && Array.isArray(SPresetSettings.RegexBinding.regexes) && SPresetSettings.RegexBinding.regexes.length > 0) {
       return SPresetSettings.RegexBinding.regexes;
     }
     const json = getPrompt('regexes-bindings') || '';
