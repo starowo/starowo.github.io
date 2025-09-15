@@ -1,218 +1,876 @@
-// 全局唯一标记（页面内多次加载复用同一个 Symbol）
-const MARK = Symbol.for('plugin.regexPrefixProxyInfo');
-// eslint-disable-next-line no-control-regex
-const sanitizeFileName = name => name.replace(/[\s.<>:"/\\|?*\x00-\x1f\x7f]/g, '_').toLowerCase();
-function isOurs(val) {
-  try {
-    return !!(val && val[MARK] && val[MARK].isOurProxy);
-  } catch {
-    return false;
-  }
-}
-
-const promptTemplate = {
-  identifier: '',
-  system_prompt: false,
-  enabled: false,
-  marker: false,
-  name: '',
-  role: 'system',
-  content: '',
-  injection_position: 0,
-  injection_depth: 4,
-  injection_order: 100,
-  injection_trigger: null,
-  forbid_overrides: false,
+let SPresetSettings = {
+  RegexBinding: {},
+  ChatSquash: {
+    enabled: false,
+    separate_chat_history: false,
+    parse_clewd: true,
+    role: 'assistant',
+    enable_stop_string: false,
+    stop_string: 'User:',
+    user_prefix: '\n\nUser:',
+    user_suffix: '',
+    char_prefix: '\n\nAssistant:',
+    char_suffix: '',
+    prefix_system: '',
+    suffix_system: '',
+    enable_squashed_separator: false,
+    squashed_separator_regex: false,
+    squashed_separator_string: '',
+    squashed_post_script_enable: false,
+    squashed_post_script: '',
+  },
+  MacroNest: false,
 };
 
-/* deprecated
-function reproxy(settings, prop, prefixExtras) {
-  let cur = settings[prop];
+let SGlobalSettings = {
+  RegexBinding: {},
+};
 
-  if (isOurs(cur)) {
-    const info = cur[MARK];
-    try {
-      info.revoke?.();
-    } catch {
-      console.error('[RegexProxy] revoke error', cur);
-    }
-    cur = info.raw; // 原始数组本体
-  }
+const ctx = SillyTavern.getContext();
 
-  if (!Array.isArray(cur)) {
-    return false;
-  }
-  const base = cur;
+const settingsDom = $(`
+  <div id="s_preset_settings">
+  </div>
+`);
 
-  const handler = createPrefixHandler(base, prefixExtras);
-  const { proxy, revoke } = Proxy.revocable(base, handler);
+let loadSettingsToChatSquashForm = null;
+let loadSettingsToMacroNestForm = null;
 
-  Object.defineProperty(base, MARK, {
-    configurable: true,
-    enumerable: false,
-    value: {
-      isOurProxy: true,
-      raw: base,
-      revoke,
-      version: (base[MARK]?.version ?? 0) + 1,
-      ts: Date.now(),
-    },
-  });
-
-  settings[prop] = proxy;
-  return true;
+function injectScriptRaw(id, content) {
+  const script = document.createElement('script');
+  script.id = id;
+  script.type = 'module';
+  script.textContent = content;
+  document.body.appendChild(script);
 }
 
-function createPrefixHandler(base, prefix) {
-  // remove all elements with duplicate ids from base
-  prefix.forEach(p => {
-    const index = base.findIndex(b => b.id === p.id);
-    if (index !== -1) {
-      base.splice(index, 1);
+function importFromModule(container, imports) {
+  let injectContent = ``;
+  for (const importItem of imports) {
+    injectContent += `import { ${importItem.items.join(', ')} } from "${importItem.from}.js";\n`;
+  }
+  injectContent += `\nconst ${container} = {`;
+  for (const importItem of imports) {
+    for (const item of importItem.items) {
+      injectContent += `\n  ${item}: ${item},`;
+    }
+  }
+  injectContent += `\n};\n`;
+  injectContent += `\nwindow.${container} = ${container};\n`;
+  injectContent += `
+  const data = {
+    'id': '${container}',
+    'imports': ${container},
+  }
+  `
+  injectContent += `ctx.eventSource.emit('module_imported', data);\n`;
+
+  injectScriptRaw(container + '_imports', injectContent);
+}
+
+importFromModule('SPresetImports', [
+  {
+    items: ['promptManager', 'MessageCollection', 'Message'],
+    from: './scripts/openai',
+  },
+]);
+
+$(() => {
+  ctx.eventSource.on('module_imported', (data) => {
+    if (data.id === 'SPresetImports') {
+      const originalFunction = SPresetImports.promptManager.preparePrompt;
+      SPresetImports.promptManager.preparePrompt = function (prompt, original = null) {
+        console.log('preparePrompt', prompt, original);
+        if (!SPresetSettings.MacroNest || !prompt.content) {
+          const result = originalFunction.apply(this, [prompt, original]);
+          console.log('result', result);
+          return result;
+        }
+        try {
+        const originalResult = originalFunction.apply(this, [prompt, original]);
+        const groupMembers = this.getActiveGroupCharacters();
+        const PromptClass = originalResult.constructor;
+        const preparedPrompt = Reflect.construct(PromptClass, [prompt]);
+
+        if (typeof original === 'string') {
+          /* eslint-disable-next-line */
+          if (0 < groupMembers.length) {
+            preparedPrompt.content = substituteParamsRecursive(
+              prompt.content ?? '',
+              null,
+              null,
+              original,
+              groupMembers.join(', '),
+            );
+          } else {
+            preparedPrompt.content = substituteParamsRecursive(prompt.content, null, null, original);
+          }
+        } else {
+          /* eslint-disable-next-line */
+          if (0 < groupMembers.length) {
+            preparedPrompt.content = substituteParamsRecursive(
+              prompt.content ?? '',
+              null,
+              null,
+              null,
+              groupMembers.join(', '),
+            );
+          } else {
+            preparedPrompt.content = substituteParamsRecursive(prompt.content);
+          }
+        }
+        console.log('preparedPrompt', preparedPrompt);
+        return preparedPrompt;
+      } catch (error) {
+        console.error('preparePrompt error', error);
+        throw error;
+      }
+      };
     }
   });
-  const isIndex = p => typeof p === 'string' && String(+p) === p && +p >= 0;
+  reloadSettings();
+  injectSPresetMenu();
+  RegexBinding();
+  loadSettingsToChatSquashForm = ChatSquash();
+  loadSettingsToMacroNestForm = MacroNest();
+  ctx.eventSource.on('oai_preset_changed_after', () => {
+    reloadSettings();
+  });
+});
 
-  const toFull = () => prefix.concat(base);
+function substituteParamsRecursive(
+  content,
+  _name1,
+  _name2,
+  _original,
+  _group,
+  _replaceCharacterCard = true,
+  additionalMacro = {},
+  postProcessFn = x => x,
+) {
+  let s = String(content);
 
-  const BYPASS_TOKEN = '#saved_regex_scripts';
-  const isSavedRendererCb = cb => {
-    try {
-      return typeof cb === 'function' && cb.toString().includes(BYPASS_TOKEN);
-    } catch {
-      return false;
-    }
+  // 统一的解析调用 + 花括号保护，防止解析后的文本再被当作宏
+  const resolveOne = inner => {
+    const replaced = ctx
+      .substituteParams(
+        `{{${inner}}}`,
+        _name1,
+        _name2,
+        _original,
+        _group,
+        _replaceCharacterCard,
+        additionalMacro,
+        postProcessFn,
+      )
+    return String(replaced);
   };
 
-  return {
-    get(target, prop, recv) {
-      const P = prefix.length;
-      if (prop === Symbol.iterator) {
-        const full = toFull();
-        return full[Symbol.iterator].bind(full);
+  // 使用栈进行由左到右扫描；遇到 }} 立即解析最近的 {{...}}
+  // 顺序会是：先解最早遇到的外层里的最内层，再回到外层 —— 即你要的 1-3-4-2-6-5
+  const MAX_STEPS = 1_000_000; // 防御型上限
+  let steps = 0;
+
+  while (true) {
+    let i = 0;
+    let stack = [];
+    let replacedThisRound = false;
+
+    while (i < s.length) {
+      if (++steps > MAX_STEPS) {
+        throw new Error('resolveMacrosSync: exceeded MAX_STEPS (可能存在未闭合的大括号或异常增长)');
       }
 
-      if (prop === 'length') return P + target.length;
-
-      if (isIndex(prop)) {
-        const i = +prop;
-        return i < P ? prefix[i] : target[i - P];
+      // 命中 {{ 入栈
+      if (s[i] === '{' && s[i + 1] === '{') {
+        stack.push(i);
+        i += 2;
+        continue;
       }
 
-      // fuck saveSettings
-      if (prop === 'toJSON') {
-        return function () {
-          return target.slice();
-        };
-      }
+      // 命中 }} 出栈并立刻解析替换
+      if (s[i] === '}' && s[i + 1] === '}') {
+        if (stack.length > 0) {
+          const start = stack.pop();
+          const inner = s.slice(start + 2, i);
+          const replacement = resolveOne(inner.replaceAll('{', '<|lb|>').replaceAll('}', '<|rb|>'));
 
-      const val = Reflect.get(target, prop, recv);
-      if (typeof val === 'function') {
-        const name = prop;
+          // 原位替换： [0,start) + replacement + (i+2,end)
+          s = s.slice(0, start) + replacement + s.slice(i + 2);
 
-        // fuck SillyTavern.getContext()
-        if (name === 'forEach') {
-          return function forEach(cb, thisArg) {
-            if (isSavedRendererCb(cb)) {
-              const arr = target;
-              return Array.prototype.forEach.call(arr, (obj, i) => cb(obj, i + P), thisArg);
-            } else {
-              const arr = toFull();
-              return Array.prototype.forEach.call(arr, cb, thisArg);
-            }
-          };
-        }
-
-        // fuck 提示词模板和酒馆助手
-        if (name === 'filter') {
-          return function filter(cb, thisArg) {
-            return Array.prototype.filter.call(target, cb, thisArg);
-          };
-        }
-
-        const readOnly = [
-          'slice',
-          'map',
-          'find',
-          'findIndex',
-          'some',
-          'every',
-          'includes',
-          'indexOf',
-          'join',
-          'toString',
-          'entries',
-          'keys',
-          'values',
-          'flat',
-          'flatMap',
-        ];
-        if (readOnly.includes(name)) {
-          return Function.prototype.call.bind(Array.prototype[name], toFull());
-        }
-
-        if (name === 'splice') {
-          return function splice(start, deleteCount, ...items) {
-            const s = start - P;
-            if (s < 0) {
-              // do nothing
-              return;
-            }
-            return Array.prototype.splice.call(target, s, deleteCount, ...items);
-          };
-        }
-        if (['unshift', 'push', 'pop', 'shift', 'sort', 'reverse', 'copyWithin', 'fill'].includes(name)) {
-          return (...args) => Array.prototype[name].apply(target, args);
+          // 将扫描指针放到替换后片段的末尾，继续向右扫
+          i = start + replacement.length;
+          replacedThisRound = true;
+          continue;
+        } else {
+          // 孤立的 }}，跳过
+          i += 2;
+          continue;
         }
       }
-      return val;
+
+      i += 1;
+    }
+
+    // 本轮没有任何替换则结束
+    if (!replacedThisRound) break;
+  }
+
+  // 还原之前对花括号的保护
+  return s.replaceAll('<|lb|>', '{').replaceAll('<|rb|>', '}');
+}
+
+
+function reloadSettings() {
+  const defaultPresetSettings = {
+    ChatSquash: {
+      enabled: false,
+      separate_chat_history: false,
+      parse_clewd: true,
+      role: 'assistant',
+      stop_string: 'User:',
+      user_prefix: '\n\nUser:',
+      user_suffix: '',
+      char_prefix: '\n\nAssistant:',
+      char_suffix: '',
+      prefix_system: '',
+      suffix_system: '',
+      enable_squashed_separator: false,
+      squashed_separator_regex: false,
+      squashed_separator_string: '',
+      squashed_post_script_enable: false,
+      squashed_post_script: '',
     },
-
-    set(target, prop, value, recv) {
-      const P = prefix.length;
-      if (prop === 'length') {
-        const L = Number(value);
-        target.length = Math.max(0, L - P);
-        return true;
-      }
-      if (isIndex(prop)) {
-        const i = +prop - P;
-        target[i] = value;
-        return true;
-      }
-      return Reflect.set(target, prop, value, recv);
-    },
-
-    deleteProperty(target, prop) {
-      const P = prefix.length;
-      if (isIndex(prop)) {
-        const i = +prop - P;
-        return delete target[i];
-      }
-      return Reflect.deleteProperty(target, prop);
-    },
+    RegexBinding: {},
+    MacroNest: false,
   };
-}
- */
-function getFileText(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsText(file);
-    reader.onload = function () {
-      resolve(String(reader.result));
-    };
-    reader.onerror = function (error) {
-      reject(error);
-    };
-  });
+  const defaultGlobalSettings = {
+    RegexBinding: {},
+  };
+  const temp1 = ctx.chatCompletionSettings.extensions.SPreset;
+  if (temp1 && !temp1.ChatSquash) {
+    temp1.ChatSquash = defaultPresetSettings.ChatSquash;
+  }
+  const temp2 = ctx.extensionSettings.SPreset;
+  SPresetSettings = temp1 || defaultPresetSettings;
+  SGlobalSettings = temp2 || defaultGlobalSettings;
 }
 
-(() => {
-  const extensions = SillyTavern.getContext().extensionSettings;
+function injectSPresetMenu() {
+  const menuButton = $(`
+    <div id="open_s_preset_menu" class="menu_button menu_button_icon interactable" title="打开预设增强菜单" tabindex="0">
+      <i class="fa-fw fa-solid fa-s" style="color: #ff0000;"></i>
+    </div>
+  `);
+  $('#openai_preset_import_file').before(menuButton);
+
+  // 绑定菜单按钮点击事件
+  menuButton.on('click', openSPresetMenu);
+
+  function openSPresetMenu() {
+    reloadSettings();
+    loadSettingsToChatSquashForm();
+    loadSettingsToMacroNestForm();
+    ctx.callGenericPopup(settingsDom.get(0), ctx.POPUP_TYPE.DISPLAY);
+  }
+
+  // 初始化所有功能模块
+  initializeMenuSections();
+}
+
+// 添加功能模块到菜单的函数
+function addMenuSection(sectionId, title, content, css = null) {
+  if (css) {
+    injectCssStyles(`styles_${sectionId}`, css);
+  }
+  const sectionHtml = $(`
+    <div id="${sectionId}_section" class="${sectionId.replace('_', '-')}">
+      <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b>${title}</b>
+            <div class="inline-drawer-icon fa-solid interactable up fa-circle-chevron-up" tabindex="0"></div>
+        </div>
+        <div class="inline-drawer-content" style="display: none">
+          ${content}
+        </div>
+      </div>
+    </div>
+    <hr />
+  `);
+
+  settingsDom.append(sectionHtml);
+  return sectionHtml;
+}
+
+function injectCssStyles(id, css) {
+  const style = document.createElement('style');
+  style.id = id;
+  style.innerHTML = css;
+  document.head.appendChild(style);
+}
+
+// 初始化所有功能模块
+function initializeMenuSections() {
+  // 清空现有内容
+  console.log('initializeMenuSections');
+  console.log(settingsDom);
+  settingsDom.empty();
+  settingsDom.append($(`<h3><strong>预设增强功能</strong></h3>`));
+  injectCssStyles(
+    's_preset_settings_css',
+    `
+  #s_preset_settings {
+    max-height: 600px;
+    overflow-y: auto;
+  }
+  `,
+  );
+}
+
+const MacroNest = () => {
+  const macroNestMenuItems = `
+    <div class="inline-drawer-content" style="display: block;">
+      <label class="flex-container">
+        <input type="checkbox" id="macro_nest_enabled"><span>启用宏嵌套</span>
+      </label>
+    </div>
+  `;
+  const menu = addMenuSection('macro_nest', '宏嵌套', macroNestMenuItems);
+  menu.find('#macro_nest_enabled').on('change', function () {
+    SPresetSettings.MacroNest = this.checked;
+    ctx.chatCompletionSettings.extensions.SPreset = SPresetSettings;
+    ctx.saveSettingsDebounced();
+  });
+  function loadSettingsToForm() {
+    menu.find('#macro_nest_enabled').prop('checked', SPresetSettings.MacroNest);
+  }
+  return loadSettingsToForm;
+};
+
+const ChatSquash = () => {
+  const chatSquashMenuItems = `
+    <div class="inline-drawer-content" style="display: block;">
+			<label class="flex-container">
+				<input type="checkbox" id="squash_enabled"><span>启用提示词合并</span>
+			</label>
+      <div id="squash_enabled_content" style="display: none;">
+
+            <div class="flex-container" title="仅合并聊天记录">
+                <input type="checkbox" id="separate_chat_history"><span>仅合并聊天记录</span>
+            </div>
+            <div class="flex-container" title="解析clewd标记">
+                <input type="checkbox" id="parse_clewd"><span>解析clewd标记</span>
+            </div>
+
+            <hr>
+
+            <div class="flex-container flexFlowColumn">
+                <label for="squash_role">
+                     合并至角色
+                </label>
+                <select id="squash_role" class="text_pole">
+                    <option value="system">系统</option>
+                    <option value="user">用户</option>
+                    <option value="assistant">模型</option>
+                </select>
+            </div>
+
+            <hr>
+
+            <div class="flex-container flexFlowColumn" title="停止字符">
+                <label for="stop_string">
+                    停止字符
+                </label>
+                <div class="flex-container" title="Enable stop string">
+                    <input type="checkbox" id="enable_stop_string"><span>启用停止字符</span>
+                </div>
+                <div class="flex-container">
+                    <input id="stop_string" name="stop_string" class="text_pole flex1 wide100p" maxlength="500" size="35" type="text" autocomplete="off">
+                </div>
+            </div>
+
+            <hr>
+
+            <div class="flex-container flexFlowColumn" title="用户消息前缀">
+                <label for="user_prefix">用户消息前缀</label>
+                <div class="flex-container">
+                    <textarea id="user_prefix" name="user_prefix" class="text_pole flex1 wide100p" maxlength="500" size="35" type="text" autocomplete="off"></textarea>
+                </div>
+            </div>
+
+            <div class="flex-container flexFlowColumn" title="用户消息后缀">
+                <label for="user_suffix">用户消息后缀</label>
+                <div class="flex-container">
+                    <textarea id="user_suffix" name="user_suffix" class="text_pole flex1 wide100p" maxlength="500" size="35" type="text" autocomplete="off"></textarea>
+                </div>
+            </div>
+
+            <div class="flex-container flexFlowColumn" title="角色消息前缀">
+                <label for="char_prefix">
+                    角色消息前缀
+                </label>
+                <div class="flex-container">
+                    <textarea id="char_prefix" name="char_prefix" class="text_pole flex1 wide100p" maxlength="500" size="35" type="text" autocomplete="off"></textarea>
+                </div>
+            </div>
+
+            <div class="flex-container flexFlowColumn" title="角色消息后缀">
+                <label for="char_suffix">
+                    角色消息后缀
+                </label>
+                <div class="flex-container">
+                    <textarea id="char_suffix" name="char_suffix" class="text_pole flex1 wide100p" maxlength="500" size="35" type="text" autocomplete="off"></textarea>
+                </div>
+            </div>
+
+            <div class="flex-container flexFlowColumn" title="系统消息前缀">
+                <label for="prefix_system">
+                    系统消息前缀
+                </label>
+                <div class="flex-container">
+                    <textarea id="prefix_system" name="prefix_system" class="text_pole flex1 wide100p" maxlength="500" size="35" type="text" autocomplete="off"></textarea>
+                </div>
+            </div>
+
+            <div class="flex-container flexFlowColumn" title="系统消息后缀">
+                <label for="suffix_system">
+                    系统消息后缀
+                </label>
+                <div class="flex-container">
+                    <textarea id="suffix_system" name="suffix_system" class="text_pole flex1 wide100p" maxlength="500" size="35" type="text" autocomplete="off"></textarea>
+                </div>
+            </div>
+
+            
+            <hr>
+            <strong class="noass-center-text">后处理</strong>
+
+            <div class="flex-container flexFlowColumn" title="不压缩部分">
+                <label for="squashed_separator_string">
+                    <strong>不压缩标记</strong>
+                </label>
+                <div class="flex-container" title="启用不压缩标记">
+                    <input type="checkbox" id="enable_squashed_separator"><span>启用不压缩标记</span>
+                </div>
+                <div class="flex-container" title="Regex mode for squashed history separator.">
+                    <input type="checkbox" id="squashed_separator_regex"><span>正则模式</span>
+                </div>
+                <div class="flex-container">
+                    <input id="squashed_separator_string" class="text_pole flex1 wide100p" maxlength="500" size="35" type="text" autocomplete="off">
+                </div>
+
+                <hr>
+            </div>
+            <div class="flex-container flexFlowColumn">
+                <strong>后处理脚本</strong>
+                <div class="flex-container" title="启用后处理脚本">
+                    <input type="checkbox" id="squashed_post_script_enable"><span>启用后处理脚本</span>
+                </div>
+                <div class="flex-container flexFlowColumn">
+                    <label for="squashed_post_script">
+                        脚本内容
+                    </label>
+                    <div class="flex-container">
+                        <textarea id="squashed_post_script" class="text_pole flex1 wide100p" size="35" type="text" autocomplete="off"></textarea>
+                    </div>
+                </div>
+            </div>            
+
+            <hr>
+        </div>
+    </div>
+  `;
+  const menu = addMenuSection('chat_squash', '聊天记录合并', chatSquashMenuItems);
+  menu.find('#squash_enabled').on('change', function () {
+    $('#squash_enabled_content').css({
+      display: $(this).prop('checked') ? 'block' : 'none',
+    });
+    saveSettingsFromForm();
+  });
+
+  menu.find('#squash_enabled_content').on('change', function () {
+    saveSettingsFromForm();
+  });
+
+  loadSettingsToForm();
+
+  function loadSettingsToForm() {
+    console.debug('loadSettingsToForm');
+    menu.find('#squash_enabled').prop('checked', SPresetSettings.ChatSquash.enabled);
+    menu.find('#separate_chat_history').prop('checked', SPresetSettings.ChatSquash.separate_chat_history);
+    menu.find('#parse_clewd').prop('checked', SPresetSettings.ChatSquash.parse_clewd);
+    menu.find('#squash_role').val(SPresetSettings.ChatSquash.role);
+    menu.find('#stop_string').val(SPresetSettings.ChatSquash.stop_string);
+    menu.find('#enable_stop_string').prop('checked', SPresetSettings.ChatSquash.enable_stop_string);
+    if (SPresetSettings.ChatSquash.enable_stop_string && SPresetSettings.ChatSquash.stop_string) {
+      ctx.powerUserSettings.custom_stopping_strings = JSON.stringify([SPresetSettings.ChatSquash.stop_string]);
+    }
+    menu.find('#user_prefix').val(SPresetSettings.ChatSquash.user_prefix);
+    menu.find('#user_suffix').val(SPresetSettings.ChatSquash.user_suffix);
+    menu.find('#char_prefix').val(SPresetSettings.ChatSquash.char_prefix);
+    menu.find('#char_suffix').val(SPresetSettings.ChatSquash.char_suffix);
+    menu.find('#prefix_system').val(SPresetSettings.ChatSquash.prefix_system);
+    menu.find('#suffix_system').val(SPresetSettings.ChatSquash.suffix_system);
+    menu.find('#enable_squashed_separator').prop('checked', SPresetSettings.ChatSquash.enable_squashed_separator);
+    menu.find('#squashed_separator_regex').prop('checked', SPresetSettings.ChatSquash.squashed_separator_regex);
+    menu.find('#squashed_separator_string').val(SPresetSettings.ChatSquash.squashed_separator_string);
+    menu.find('#squashed_post_script_enable').prop('checked', SPresetSettings.ChatSquash.squashed_post_script_enable);
+    menu.find('#squashed_post_script').val(SPresetSettings.ChatSquash.squashed_post_script);
+    menu.find('#squash_enabled_content').css({
+      display: menu.find('#squash_enabled').prop('checked') ? 'block' : 'none',
+    });
+  }
+
+  function saveSettingsFromForm() {
+    console.debug('saveSettingsFromForm');
+    SPresetSettings.ChatSquash.enabled = menu.find('#squash_enabled').prop('checked');
+    SPresetSettings.ChatSquash.separate_chat_history = menu.find('#separate_chat_history').prop('checked');
+    SPresetSettings.ChatSquash.parse_clewd = menu.find('#parse_clewd').prop('checked');
+    SPresetSettings.ChatSquash.role = menu.find('#squash_role').val();
+    SPresetSettings.ChatSquash.stop_string = menu.find('#stop_string').val();
+    SPresetSettings.ChatSquash.enable_stop_string = menu.find('#enable_stop_string').prop('checked');
+    if (SPresetSettings.ChatSquash.enable_stop_string && SPresetSettings.ChatSquash.stop_string) {
+      ctx.powerUserSettings.custom_stopping_strings = JSON.stringify([SPresetSettings.ChatSquash.stop_string]);
+    }
+    SPresetSettings.ChatSquash.user_prefix = menu.find('#user_prefix').val();
+    SPresetSettings.ChatSquash.user_suffix = menu.find('#user_suffix').val();
+    SPresetSettings.ChatSquash.char_prefix = menu.find('#char_prefix').val();
+    SPresetSettings.ChatSquash.char_suffix = menu.find('#char_suffix').val();
+    SPresetSettings.ChatSquash.prefix_system = menu.find('#prefix_system').val();
+    SPresetSettings.ChatSquash.suffix_system = menu.find('#suffix_system').val();
+    SPresetSettings.ChatSquash.enable_squashed_separator = menu.find('#enable_squashed_separator').prop('checked');
+    SPresetSettings.ChatSquash.squashed_separator_regex = menu.find('#squashed_separator_regex').prop('checked');
+    SPresetSettings.ChatSquash.squashed_separator_string = menu.find('#squashed_separator_string').val();
+    SPresetSettings.ChatSquash.squashed_post_script_enable = menu.find('#squashed_post_script_enable').prop('checked');
+    SPresetSettings.ChatSquash.squashed_post_script = menu.find('#squashed_post_script').val();
+    ctx.chatCompletionSettings.extensions.SPreset = SPresetSettings;
+    ctx.saveSettingsDebounced();
+  }
+
+  ctx.eventSource.on(ctx.eventTypes.CHAT_COMPLETION_PROMPT_READY, data => {
+    if (!SPresetSettings.ChatSquash.enabled) {
+      return;
+    }
+    const settings = SPresetSettings.ChatSquash;
+    const promptManager = SPresetImports.promptManager;
+    if (settings.separate_chat_history) {
+      data.chat.length = 0;
+      data.chat.push(...getChat(promptManager));
+    } else {
+      squashPrompts(data.chat);
+    }
+
+    function getChat(chatData) {
+      const chat = [];
+      for (let item of chatData.messages.collection) {
+        if (item instanceof SPresetImports.MessageCollection) {
+          if (item.identifier === 'chatHistory') {
+            chat.push(...squashPrompts(item.getChat()));
+          } else {
+            chat.push(...item.getChat());
+          }
+        } else if (item instanceof SPresetImports.Message && (item.content || item.tool_calls)) {
+          const message = {
+            role: item.role,
+            content: item.content,
+            ...(item.name ? { name: item.name } : {}),
+            ...(item.tool_calls ? { tool_calls: item.tool_calls } : {}),
+            ...(item.role === 'tool' ? { tool_call_id: item.identifier } : {}),
+          };
+          chat.push(message);
+        } else {
+          console.warn(`Skipping invalid or empty message in collection: ${JSON.stringify(item)}`);
+        }
+      }
+      return chat;
+    }
+  });
+
+  function squashPrompts(prompts) {
+    const settings = SPresetSettings.ChatSquash;
+    const newPrompts = [...prompts];
+    prompts.length = 0;
+    let lastRole = '';
+    let mergedContent = '';
+
+    for (const prompt of newPrompts) {
+      let separate = false;
+      if (settings.enable_squashed_separator && settings.squashed_separator_string) {
+        if (settings.squashed_separator_regex) {
+          const regex = new RegExp(settings.squashed_separator_string);
+          if (regex.test(prompt.content)) {
+            separate = true;
+            prompt.content = prompt.content.replace(regex, '');
+          }
+        } else if (prompt.content.includes(settings.squashed_separator_string)) {
+          prompt.content = prompt.content.replace(settings.squashed_separator_string, '');
+          separate = true;
+        }
+      }
+      if (!separate && settings.parse_clewd) {
+        const marker = '<|no-trans|>';
+        if (prompt.content.includes(marker)) {
+          separate = true;
+          prompt.content = prompt.content.replace(marker, '');
+        }
+      }
+      if (separate) {
+        if (mergedContent) {
+          switch (lastRole) {
+            case 'system':
+              mergedContent += ctx.substituteParams(settings.suffix_system);
+              break;
+            case 'user':
+              mergedContent += ctx.substituteParams(settings.user_suffix);
+              break;
+            case 'assistant':
+              mergedContent += ctx.substituteParams(settings.char_suffix);
+              break;
+          }
+          prompts.push({
+            role: settings.role,
+            content: postProcess(mergedContent),
+          });
+        }
+        mergedContent = '';
+        lastRole = '';
+        prompts.push(prompt);
+        continue;
+      }
+      if (prompt.role !== lastRole) {
+        switch (lastRole) {
+          case 'system':
+            mergedContent += ctx.substituteParams(settings.suffix_system);
+            break;
+          case 'user':
+            mergedContent += ctx.substituteParams(settings.user_suffix);
+            break;
+          case 'assistant':
+            mergedContent += ctx.substituteParams(settings.char_suffix);
+            break;
+        }
+        switch (prompt.role) {
+          case 'system':
+            mergedContent += ctx.substituteParams(settings.prefix_system);
+            break;
+          case 'user':
+            mergedContent += ctx.substituteParams(settings.user_prefix);
+            break;
+          case 'assistant':
+            mergedContent += ctx.substituteParams(settings.char_prefix);
+            break;
+        }
+        lastRole = prompt.role;
+      } else {
+        mergedContent += '\n';
+      }
+      mergedContent += prompt.content;
+    }
+    if (mergedContent) {
+      switch (lastRole) {
+        case 'system':
+          mergedContent += ctx.substituteParams(settings.suffix_system);
+          break;
+        case 'user':
+          mergedContent += ctx.substituteParams(settings.user_suffix);
+          break;
+        case 'assistant':
+          mergedContent += ctx.substituteParams(settings.char_suffix);
+          break;
+      }
+      prompts.push({
+        role: settings.role,
+        content: postProcess(mergedContent),
+      });
+    }
+    return prompts;
+  }
+
+  function postProcess(prompt) {
+    const hyperRegex = function (content, order) {
+      const regexPattern =
+        '<regex(?: +order *= *' +
+        order +
+        ')' +
+        (order === 2 ? '?' : '') +
+        '> *"(/?)(.*)\\1(.*?)" *: *"(.*?)" *</regex>';
+      let matches = content.match(new RegExp(regexPattern, 'gm'));
+
+      if (matches) {
+        for (let i = 0; i < matches.length; i++) {
+          const match = matches[i];
+          try {
+            const reg = /<regex(?: +order *= *\d)?> *"(\/?)(.*)\1(.*?)" *: *"(.*?)" *<\/regex>/.exec(match);
+            const replacePattern = new RegExp(reg[2], reg[3]);
+            const replacement = JSON.parse('"' + reg[4].replace(/\\?"/g, '\\"') + '"');
+            content = content.replace(replacePattern, replacement);
+            console.debug('regex - \n' + content);
+          } catch (e) {
+            console.warn('Regex processing error:', e);
+          }
+        }
+      }
+      return content;
+    };
+
+    const HyperPmtProcess = function (content) {
+      const regex1 = hyperRegex(content, 1);
+      content = regex1;
+
+      const regex2 = hyperRegex(content, 2);
+      content = regex2;
+
+      const regex3 = hyperRegex(content, 3);
+      content = regex3;
+
+      content = content
+        .replace(/<regex( +order *= *\d)?>.*?<\/regex>/gm, '')
+        .replace(/\r\n|\r/gm, '\n')
+        .replace(/\s*<\|curtail\|>\s*/g, '\n')
+        .replace(/\s*<\|join\|>\s*/g, '')
+        .replace(/\s*<\|space\|>\s*/g, ' ')
+        .replace(/<\|(\\.*?)\|>/g, function (match, p1) {
+          try {
+            return JSON.parse('"' + p1 + '"');
+          } catch {
+            return match;
+          }
+        });
+
+      return content
+        .replace(/\s*<\|.*?\|>\s*/g, '\n\n')
+        .trim()
+        .replace(/^.+:/, '\n\n$&')
+        .replace(/(?<=\n)\n(?=\n)/g, '');
+    };
+    if (SPresetSettings.ChatSquash.parse_clewd) {
+      console.debug('HyperPmtProcess - \n' + prompt);
+      prompt = HyperPmtProcess(prompt);
+    }
+    if (SPresetSettings.ChatSquash.squashed_post_script_enable) {
+      const backup = prompt;
+      try {
+        prompt = eval(SPresetSettings.ChatSquash.squashed_post_script)(prompt);
+      } catch (e) {
+        console.warn('Squashed post script processing error:', e);
+        prompt = backup;
+      }
+    }
+    return prompt;
+  }
+
+  return loadSettingsToForm;
+};
+
+const RegexBinding = () => {
+  const regexMenuItems = `
+    <div class="flex-container">
+      <div class="menu_button menu_button_icon" id="manage_preset_regexes" title="管理预设绑定正则">
+        <i class="fa-solid fa-cogs"></i>
+        <small>管理正则</small>
+      </div>
+      <div class="menu_button menu_button_icon" id="regex_binding_help" title="绑定正则使用说明">
+        <i class="fa-solid fa-circle-info"></i>
+        <small>使用说明</small>
+      </div>
+    </div>
+  `;
+
+  addMenuSection('regex_binding', '绑定内置正则', regexMenuItems);
+
+  // 绑定事件处理
+  settingsDom.find('#manage_preset_regexes').on('click', function () {
+    // 关闭菜单并跳转到正则设置
+    $('.popup-button-ok').click(); // 关闭当前弹窗
+
+    $('#extensions-settings-button .drawer-toggle').click();
+    $('.regex_settings .inline-drawer-toggle').click();
+  });
+
+  settingsDom.find('#regex_binding_help').on('click', function () {
+    showRegexBindingHelp();
+  });
+
+  // 显示绑定正则使用说明
+  function showRegexBindingHelp() {
+    const helpContent = `
+    <div style="text-align: left; max-height: 400px; overflow-y: auto;">
+      <h4>预设绑定正则功能说明</h4>
+      
+      <h5>🎯 主要功能</h5>
+      <ul style="margin: 10px 0; padding-left: 20px;">
+        <li><strong>预设绑定：</strong> 将正则表达式直接保存在预设中，而不是全局设置</li>
+        <li><strong>角色无关：</strong> 绑定的正则会影响所有使用此预设的角色</li>
+        <li><strong>正则锁定：</strong> 可以锁定重要的正则，防止预设切换时丢失</li>
+        <li><strong>批量管理：</strong> 支持批量启用、禁用和导出正则</li>
+      </ul>
+      
+      <h5>📝 使用步骤</h5>
+      <ol style="margin: 10px 0; padding-left: 20px;">
+        <li><strong>创建正则：</strong> 点击"新建预设正则"创建新的正则规则</li>
+        <li><strong>绑定现有：</strong> 在全局正则列表中点击"↑"按钮将正则绑定到当前预设</li>
+        <li><strong>管理顺序：</strong> 使用"预设正则排序"调整正则执行顺序</li>
+        <li><strong>锁定保护：</strong> 点击🔒按钮锁定重要正则，防止丢失</li>
+        <li><strong>保存预设：</strong> 记得保存预设以防正则丢失</li>
+      </ol>
+      
+      <h5>⚠️ 重要提示</h5>
+      <ul style="margin: 10px 0; padding-left: 20px; color: #ff6b6b;">
+        <li>预设绑定的正则保存在预设文件中，切换预设时会自动加载对应的正则</li>
+        <li>修改后请及时保存预设，否则可能丢失更改</li>
+        <li>正则执行顺序很重要，排序靠前的正则会先执行</li>
+        <li>锁定的正则不会因预设切换而丢失，适用于通用规则</li>
+      </ul>
+      
+      <h5>🔧 高级功能</h5>
+      <ul style="margin: 10px 0; padding-left: 20px;">
+        <li><strong>批量操作：</strong> 选中多个正则后可以批量启用、禁用或导出</li>
+        <li><strong>排序功能：</strong> 支持拖拽排序、批量移动、反转顺序等</li>
+        <li><strong>导入导出：</strong> 可以导出正则配置与他人分享</li>
+        <li><strong>实时预览：</strong> 编辑正则时可以实时测试效果</li>
+      </ul>
+    </div>
+  `;
+
+    ctx.callGenericPopup(helpContent, ctx.POPUP_TYPE.TEXT, '', {
+      okButton: '我知道了',
+    });
+  }
+  // eslint-disable-next-line no-control-regex
+  const sanitizeFileName = name => name.replace(/[\s.<>:"/\\|?*\x00-\x1f\x7f]/g, '_').toLowerCase();
+
+  const promptTemplate = {
+    identifier: '',
+    system_prompt: false,
+    enabled: false,
+    marker: false,
+    name: '',
+    role: 'system',
+    content: '',
+    injection_position: 0,
+    injection_depth: 4,
+    injection_order: 100,
+    injection_trigger: null,
+    forbid_overrides: false,
+  };
+
+  function getFileText(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsText(file);
+      reader.onload = function () {
+        resolve(String(reader.result));
+      };
+      reader.onerror = function (error) {
+        reject(error);
+      };
+    });
+  }
+  const extensions = ctx.extensionSettings;
   const presetRegexes = getRegexesFromPreset();
   const lockedRegexes = loadLockedRegexes();
 
-  const injectCssStyles = `
+  const cssStyles = `
     <style id="regex-binding-css">
       #saved_regex_scripts [id^="preset_"] {
         display: none;
@@ -220,7 +878,7 @@ function getFileText(file) {
     </style>
   `;
   if ($('#regex-binding-css').length === 0) {
-    $('head').append(injectCssStyles);
+    $('head').append(cssStyles);
   }
 
   const regexButtons = $('#open_preset_editor');
@@ -328,7 +986,7 @@ function getFileText(file) {
       return;
     }
     const json = JSON.stringify(scripts);
-    const fileName = '预设正则-' + SillyTavern.getContext().chatCompletionSettings.preset_settings_openai + '.json';
+    const fileName = '预设正则-' + ctx.chatCompletionSettings.preset_settings_openai + '.json';
     download(json, fileName, 'application/json');
   });
 
@@ -355,9 +1013,9 @@ function getFileText(file) {
       saveRegexesToPreset(presetRegexes);
       await renderPresetRegexes();
     } catch (error) {
-      const confirm = await SillyTavern.getContext().callGenericPopup(
+      const confirm = await ctx.callGenericPopup(
         '预设绑定正则出现错误：' + error.message + '<br>点击确定复制错误信息到剪贴板<br>请将错误信息发送到原贴',
-        SillyTavern.getContext().POPUP_TYPE.CONFIRM,
+        ctx.POPUP_TYPE.CONFIRM,
       );
       if (confirm) {
         navigator.clipboard.writeText(JSON.stringify(error, null, 2));
@@ -399,15 +1057,15 @@ function getFileText(file) {
   */
   try {
     $('#saved_preset_scripts').sortable({
-      delay: SillyTavern.getContext().isMobile() ? 750 : 50,
+      delay: ctx.isMobile() ? 750 : 50,
       start: window.regexBinding_onSortableStart,
       stop: window.regexBinding_onSortableStop,
     });
     $('#saved_preset_scripts').sortable('enable');
   } catch (error) {
-    const confirm = SillyTavern.getContext().callGenericPopup(
+    const confirm = ctx.callGenericPopup(
       '预设绑定正则出现错误：' + error.message + '<br>点击确定复制错误信息到剪贴板<br>请将错误信息发送到原贴',
-      SillyTavern.getContext().POPUP_TYPE.CONFIRM,
+      ctx.POPUP_TYPE.CONFIRM,
     );
     if (confirm) {
       navigator.clipboard.writeText(JSON.stringify(error, null, 2));
@@ -415,7 +1073,7 @@ function getFileText(file) {
     }
   }
 
-  SillyTavern.getContext().eventSource.on('settings_updated', () => {
+  ctx.eventSource.on('settings_updated', () => {
     try {
       const newPresetRegexes = getRegexesFromPreset();
       const oldIdOrder = presetRegexes.map(s => s.id);
@@ -465,9 +1123,9 @@ function getFileText(file) {
         updateSTRegexes();
       }
     } catch (error) {
-      const confirm = SillyTavern.getContext().callGenericPopup(
+      const confirm = ctx.callGenericPopup(
         '预设绑定正则出现错误：' + error.message + '<br>点击确定复制错误信息到剪贴板<br>请将错误信息发送到原贴',
-        SillyTavern.getContext().POPUP_TYPE.CONFIRM,
+        ctx.POPUP_TYPE.CONFIRM,
       );
       if (confirm) {
         navigator.clipboard.writeText(JSON.stringify(error, null, 2));
@@ -491,7 +1149,7 @@ function getFileText(file) {
         id: 'preset_' + s.id,
       }));
       extensions.regex = newPresetRegexes.concat(stRegexes.filter(s => !s.id.startsWith('preset_')));
-      SillyTavern.getContext().reloadCurrentChat();
+      ctx.reloadCurrentChat();
     } else {
       presetRegexes.forEach((s, i) => {
         extensions.regex[i] = {
@@ -540,7 +1198,7 @@ function getFileText(file) {
       }
 
       // assign a new id
-      script.id = SillyTavern.getContext().uuidv4();
+      script.id = ctx.uuidv4();
 
       presetRegexes.push(script);
       await renderPresetRegexes();
@@ -568,11 +1226,11 @@ function getFileText(file) {
       if (existingButton.length === 0) {
         const bindButton = $(bindButtonTemplate);
         bindButton.on('click', async function () {
-          const chat = await SillyTavern.getContext().chat;
+          const chat = await ctx.chat;
           if (chat.length >= 10) {
-            const confirm = await SillyTavern.getContext().callGenericPopup(
+            const confirm = await ctx.callGenericPopup(
               '当前聊天界面消息较多，执行此操作可能耗时较长，建议关闭当前聊天后再执行。<br>确定要继续吗？',
-              SillyTavern.getContext().POPUP_TYPE.CONFIRM,
+              ctx.POPUP_TYPE.CONFIRM,
             );
             if (!confirm) {
               return;
@@ -659,8 +1317,8 @@ function getFileText(file) {
           script.disabled = !!$(this).prop('checked');
           await save();
           updateSTRegexes();
-          if (SillyTavern.getContext().getCurrentChatId()) {
-            SillyTavern.getContext().reloadCurrentChat();
+          if (ctx.getCurrentChatId()) {
+            ctx.reloadCurrentChat();
           }
         });
       scriptDiv.find('.regex-toggle-on').on('click', function () {
@@ -697,11 +1355,11 @@ function getFileText(file) {
         download(fileData, fileName, 'application/json');
       });
       scriptDiv.find('.move_to_global').on('click', async function () {
-        const chat = await SillyTavern.getContext().chat;
+        const chat = await ctx.chat;
         if (chat.length >= 10) {
-          const confirm = await SillyTavern.getContext().callGenericPopup(
+          const confirm = await ctx.callGenericPopup(
             '当前聊天界面消息较多，执行此操作可能耗时较长，建议关闭当前聊天后再执行。<br>确定要继续吗？',
-            SillyTavern.getContext().POPUP_TYPE.CONFIRM,
+            ctx.POPUP_TYPE.CONFIRM,
           );
           if (!confirm) {
             return;
@@ -719,12 +1377,12 @@ function getFileText(file) {
         updateSTRegexes();
       });
       scriptDiv.find('.delete_regex').on('click', async function () {
-        const chat = await SillyTavern.getContext().chat;
-        const confirm = await SillyTavern.getContext().callGenericPopup(
+        const chat = await ctx.chat;
+        const confirm = await ctx.callGenericPopup(
           chat.length >= 10
             ? '当前聊天界面消息较多，执行此操作可能耗时较长，建议关闭当前聊天后再执行。<br>确定要删除吗？'
             : '你确定要删除这个正则吗？',
-          SillyTavern.getContext().POPUP_TYPE.CONFIRM,
+          ctx.POPUP_TYPE.CONFIRM,
         );
         if (!confirm) {
           return;
@@ -819,9 +1477,9 @@ function getFileText(file) {
       }
       return regex_settings.find('#preset_regexes_block');
     } catch (error) {
-      const confirm = SillyTavern.getContext().callGenericPopup(
+      const confirm = ctx.callGenericPopup(
         '预设绑定正则出现错误：' + error.message + '<br>点击确定复制错误信息到剪贴板<br>请将错误信息发送到原贴',
-        SillyTavern.getContext().POPUP_TYPE.CONFIRM,
+        ctx.POPUP_TYPE.CONFIRM,
       );
       if (confirm) {
         navigator.clipboard.writeText(JSON.stringify(error, null, 2));
@@ -868,7 +1526,7 @@ function getFileText(file) {
   function filterString(rawString, trimStrings, { characterOverride } = {}) {
     let finalString = rawString;
     trimStrings.forEach(trimString => {
-      const subTrimString = SillyTavern.getContext().substituteParams(trimString, undefined, characterOverride);
+      const subTrimString = ctx.substituteParams(trimString, undefined, characterOverride);
       finalString = finalString.replaceAll(subTrimString, '');
     });
 
@@ -893,9 +1551,9 @@ function getFileText(file) {
         case substitute_find_regex.NONE:
           return regexScript.findRegex;
         case substitute_find_regex.RAW:
-          return SillyTavern.getContext().substituteParamsExtended(regexScript.findRegex);
+          return ctx.substituteParamsExtended(regexScript.findRegex);
         case substitute_find_regex.ESCAPED:
-          return SillyTavern.getContext().substituteParamsExtended(regexScript.findRegex, {}, sanitizeRegexMacro);
+          return ctx.substituteParamsExtended(regexScript.findRegex, {}, sanitizeRegexMacro);
         default:
           console.warn(
             `runRegexScript: Unknown substituteRegex value ${regexScript.substituteRegex}. Using raw regex.`,
@@ -933,7 +1591,7 @@ function getFileText(file) {
       });
 
       // Substitute at the end
-      return SillyTavern.getContext().substituteParams(replaceWithGroups);
+      return ctx.substituteParams(replaceWithGroups);
     });
 
     return newString;
@@ -946,7 +1604,7 @@ function getFileText(file) {
    * @returns {Promise<void>}
    */
   async function onRegexEditorOpenClick(existingId) {
-    const editorHtml = $(await SillyTavern.getContext().renderExtensionTemplateAsync('regex', 'editor'));
+    const editorHtml = $(await ctx.renderExtensionTemplateAsync('regex', 'editor'));
     const array = presetRegexes;
 
     // If an ID exists, fill in all the values
@@ -1000,7 +1658,7 @@ function getFileText(file) {
       }
 
       const testScript = {
-        id: SillyTavern.getContext().uuidv4(),
+        id: ctx.uuidv4(),
         scriptName: editorHtml.find('.regex_script_name').val().toString(),
         findRegex: editorHtml.find('.find_regex').val().toString(),
         replaceString: editorHtml.find('.regex_replace_string').val().toString(),
@@ -1025,14 +1683,14 @@ function getFileText(file) {
     editorHtml.find('input, textarea, select').on('input', updateTestResult);
     updateInfoBlock(editorHtml);
 
-    const popupResult = await SillyTavern.getContext().callGenericPopup(editorHtml.get(0), SillyTavern.getContext().POPUP_TYPE.CONFIRM, '', {
-      okButton: SillyTavern.getContext().t`Save`,
-      cancelButton: SillyTavern.getContext().t`Cancel`,
+    const popupResult = await ctx.callGenericPopup(editorHtml.get(0), ctx.POPUP_TYPE.CONFIRM, '', {
+      okButton: ctx.t`Save`,
+      cancelButton: ctx.t`Cancel`,
       allowVerticalScrolling: true,
     });
     if (popupResult) {
       const newRegexScript = {
-        id: existingId ? String(existingId) : SillyTavern.getContext().uuidv4(),
+        id: existingId ? String(existingId) : ctx.uuidv4(),
         scriptName: String(editorHtml.find('.regex_script_name').val()),
         findRegex: String(editorHtml.find('.find_regex').val()),
         replaceString: String(editorHtml.find('.regex_replace_string').val()),
@@ -1059,8 +1717,8 @@ function getFileText(file) {
       };
 
       saveRegexScript(newRegexScript, existingScriptIndex);
-      if (SillyTavern.getContext().getCurrentChatId()) {
-        SillyTavern.getContext().reloadCurrentChat();
+      if (ctx.getCurrentChatId()) {
+        ctx.reloadCurrentChat();
       }
     }
   }
@@ -1341,7 +1999,7 @@ function getFileText(file) {
 
     // 帮助说明
     popupHtml.on('click', '#sort_help_button', function () {
-      SillyTavern.getContext().callGenericPopup(
+      ctx.callGenericPopup(
         `
         <div style="text-align: left;">
           <h4>排序功能说明</h4>
@@ -1361,7 +2019,7 @@ function getFileText(file) {
           <p><strong>重要提示：</strong> 排序越靠前的正则执行优先级越高，会先于后面的正则处理文本。合理安排正则顺序可以避免冲突并提高处理效果。</p>
         </div>
       `,
-        SillyTavern.getContext().POPUP_TYPE.TEXT,
+        ctx.POPUP_TYPE.TEXT,
       );
     });
 
@@ -1389,7 +2047,7 @@ function getFileText(file) {
     renderSortList();
 
     // 显示弹窗
-    const popupResult = await SillyTavern.getContext().callGenericPopup(popupHtml.get(0), SillyTavern.getContext().POPUP_TYPE.CONFIRM, '', {
+    const popupResult = await ctx.callGenericPopup(popupHtml.get(0), ctx.POPUP_TYPE.CONFIRM, '', {
       okButton: '保存排序',
       cancelButton: '取消',
       allowVerticalScrolling: true,
@@ -1440,21 +2098,19 @@ function getFileText(file) {
 
     // Clear the info block if the find regex is empty
     if (!findRegex) {
-      setInfoBlock(infoBlock, SillyTavern.getContext().t`Find Regex is empty`, 'info');
+      setInfoBlock(infoBlock, ctx.t`Find Regex is empty`, 'info');
       return;
     }
 
     try {
       const regex = regexFromString(findRegex);
       if (!regex) {
-        throw new Error(SillyTavern.getContext().t`Invalid Find Regex`);
+        throw new Error(ctx.t`Invalid Find Regex`);
       }
 
       const flagInfo = [];
-      flagInfo.push(
-        regex.flags.includes('g') ? SillyTavern.getContext().t`Applies to all matches` : SillyTavern.getContext().t`Applies to the first match`,
-      );
-      flagInfo.push(regex.flags.includes('i') ? SillyTavern.getContext().t`Case insensitive` : SillyTavern.getContext().t`Case sensitive`);
+      flagInfo.push(regex.flags.includes('g') ? ctx.t`Applies to all matches` : ctx.t`Applies to the first match`);
+      flagInfo.push(regex.flags.includes('i') ? ctx.t`Case insensitive` : ctx.t`Case sensitive`);
 
       setInfoBlock(infoBlock, flagInfo.join('. '), 'hint');
       infoBlockFlagsHint.show();
@@ -1500,23 +2156,23 @@ function getFileText(file) {
   async function saveRegexScript(regexScript, existingScriptIndex) {
     const array = presetRegexes;
     if (!regexScript.id) {
-      regexScript.id = SillyTavern.getContext().uuidv4();
+      regexScript.id = ctx.uuidv4();
     }
     // Is the script name undefined or empty?
     if (!regexScript.scriptName) {
-      toastr.error(SillyTavern.getContext().t`Could not save regex script: The script name was undefined or empty!`);
+      toastr.error(ctx.t`Could not save regex script: The script name was undefined or empty!`);
       return;
     }
 
     // Is a find regex present?
     if (regexScript.findRegex.length === 0) {
-      toastr.warning(SillyTavern.getContext().t`This regex script will not work, but was saved anyway: A find regex isn't present.`);
+      toastr.warning(ctx.t`This regex script will not work, but was saved anyway: A find regex isn't present.`);
     }
 
     // Is there someplace to place results?
     if (regexScript.placement.length === 0) {
       toastr.warning(
-        SillyTavern.getContext().t`This regex script will not work, but was saved anyway: One "Affects" checkbox must be selected!`,
+        ctx.t`This regex script will not work, but was saved anyway: One "Affects" checkbox must be selected!`,
       );
     }
 
@@ -1528,13 +2184,19 @@ function getFileText(file) {
     await renderPresetRegexes();
     saveRegexesToPreset(presetRegexes);
     updateSTRegexes();
-    // SillyTavern.getContext().reloadCurrentChat();
+    // ctx.reloadCurrentChat();
   }
 
   function loadLockedRegexes() {
+    if (SGlobalSettings.RegexBinding.lockedRegexes && SGlobalSettings.RegexBinding.lockedRegexes.length > 0) {
+      return SGlobalSettings.RegexBinding.lockedRegexes;
+    }
+    if (!ctx.extensionSettings.regexBinding_scriptId) {
+      return [];
+    }
     const variables = TavernHelper.getVariables({
       type: 'script',
-      script_id: SillyTavern.getContext().extensionSettings.regexBinding_scriptId,
+      script_id: ctx.extensionSettings.regexBinding_scriptId,
     });
     if (variables && variables['locked-regexes']) {
       const json = JSON.stringify(variables['locked-regexes']);
@@ -1554,25 +2216,15 @@ function getFileText(file) {
   }
 
   function saveLockedRegexes(regexes) {
-    if (!regexes || regexes.length === 0) {
-      TavernHelper.deleteVariable('locked-regexes', {
-        type: 'script',
-        script_id: SillyTavern.getContext().extensionSettings.regexBinding_scriptId,
-      });
-      return;
-    }
-    TavernHelper.insertOrAssignVariables(
-      {
-        'locked-regexes': regexes,
-      },
-      {
-        type: 'script',
-        script_id: SillyTavern.getContext().extensionSettings.regexBinding_scriptId,
-      },
-    );
+    SGlobalSettings.RegexBinding.lockedRegexes = regexes;
+    ctx.extensionSettings.SPreset = SGlobalSettings;
+    ctx.saveSettingsDebounced();
   }
 
   function getRegexesFromPreset() {
+    if (SPresetSettings.RegexBinding.regexes) {
+      return SPresetSettings.RegexBinding.regexes;
+    }
     const json = getPrompt('regexes-bindings') || '';
     return json ? JSON.parse(json) : [];
   }
@@ -1583,29 +2235,20 @@ function getFileText(file) {
     const newRegexes = regexes.filter(
       s => !lockedRegexes.find(l => l.id === s.id) || currentRegexes.find(c => c.id === s.id),
     );
-    const json = JSON.stringify(newRegexes);
-    if (!getPrompt('regexes-bindings')) {
-      addPrompt('regexes-bindings', '【勿删】绑定正则', json);
-    } else {
-      setPrompt('regexes-bindings', json);
-    }
-    /*
-    // 疑似有big会导致丢条目，先注释掉
-    updatePresetWith('in_use', preset => {
-      return getPreset('in_use');
-    });
-    */
+    SPresetSettings.RegexBinding.regexes = newRegexes;
+    ctx.chatCompletionSettings.extensions.SPreset = SPresetSettings;
+    ctx.saveSettingsDebounced();
   }
 
   function getPrompt(identifier) {
-    const oai_settings = SillyTavern.getContext().chatCompletionSettings;
+    const oai_settings = ctx.chatCompletionSettings;
     const prompts = oai_settings.prompts;
     const prompt = prompts.find(p => p.identifier === identifier)?.content;
     return prompt || null;
   }
 
   function setPrompt(identifier, content) {
-    const oai_settings = SillyTavern.getContext().chatCompletionSettings;
+    const oai_settings = ctx.chatCompletionSettings;
     const prompts = oai_settings.prompts;
     const prompt = prompts.find(p => p.identifier === identifier);
     if (prompt) {
@@ -1627,8 +2270,8 @@ function getFileText(file) {
     prompt.injection_order = extras.injection_order || 100;
     prompt.injection_trigger = extras.injection_trigger;
     prompt.forbid_overrides = extras.forbid_overrides || false;
-    const oai_settings = SillyTavern.getContext().chatCompletionSettings;
+    const oai_settings = ctx.chatCompletionSettings;
     const prompts = oai_settings.prompts;
     prompts.push(prompt);
   }
-})();
+};
