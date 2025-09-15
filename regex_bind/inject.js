@@ -62,7 +62,7 @@ function importFromModule(container, imports) {
     'id': '${container}',
     'imports': ${container},
   }
-  `
+  `;
   injectContent += `ctx.eventSource.emit('module_imported', data);\n`;
 
   injectScriptRaw(container + '_imports', injectContent);
@@ -76,7 +76,23 @@ importFromModule('SPresetImports', [
 ]);
 
 $(() => {
-  ctx.eventSource.on('module_imported', (data) => {
+  if (ctx.chatCompletionSettings.extensions.preset_settings_openai.includes('小猫之神')) {
+    if (
+      ctx.extensionSettings.SillyTavernExtension - JsRunner &&
+      ctx.extensionSettings.SillyTavernExtension - JsRunner.javascripts
+    ) {
+      for (const js of ctx.extensionSettings.SillyTavernExtension - JsRunner.javascripts) {
+        if (js.enabled && js.javascript.includes('SillyTavernExtension-mergeEditor')) {
+          ctx.callGenericPopup(
+            '检测到你启用了kemini预设的脚本，请在javascript runner配置中关闭那个脚本然后刷新页面，否则会与小猫之神预设的功能冲突',
+            ctx.POPUP_TYPE.DISPLAY,
+          );
+          break;
+        }
+      }
+    }
+  }
+  ctx.eventSource.on('module_imported', data => {
     if (data.id === 'SPresetImports') {
       const originalFunction = SPresetImports.promptManager.preparePrompt;
       SPresetImports.promptManager.preparePrompt = function (prompt, original = null) {
@@ -87,44 +103,44 @@ $(() => {
           return result;
         }
         try {
-        const originalResult = originalFunction.apply(this, [prompt, original]);
-        const groupMembers = this.getActiveGroupCharacters();
-        const PromptClass = originalResult.constructor;
-        const preparedPrompt = Reflect.construct(PromptClass, [prompt]);
+          const originalResult = originalFunction.apply(this, [prompt, original]);
+          const groupMembers = this.getActiveGroupCharacters();
+          const PromptClass = originalResult.constructor;
+          const preparedPrompt = Reflect.construct(PromptClass, [prompt]);
 
-        if (typeof original === 'string') {
-          /* eslint-disable-next-line */
-          if (0 < groupMembers.length) {
-            preparedPrompt.content = substituteParamsRecursive(
-              prompt.content ?? '',
-              null,
-              null,
-              original,
-              groupMembers.join(', '),
-            );
+          if (typeof original === 'string') {
+            /* eslint-disable-next-line */
+            if (0 < groupMembers.length) {
+              preparedPrompt.content = substituteParamsRecursive(
+                prompt.content ?? '',
+                null,
+                null,
+                original,
+                groupMembers.join(', '),
+              );
+            } else {
+              preparedPrompt.content = substituteParamsRecursive(prompt.content, null, null, original);
+            }
           } else {
-            preparedPrompt.content = substituteParamsRecursive(prompt.content, null, null, original);
+            /* eslint-disable-next-line */
+            if (0 < groupMembers.length) {
+              preparedPrompt.content = substituteParamsRecursive(
+                prompt.content ?? '',
+                null,
+                null,
+                null,
+                groupMembers.join(', '),
+              );
+            } else {
+              preparedPrompt.content = substituteParamsRecursive(prompt.content);
+            }
           }
-        } else {
-          /* eslint-disable-next-line */
-          if (0 < groupMembers.length) {
-            preparedPrompt.content = substituteParamsRecursive(
-              prompt.content ?? '',
-              null,
-              null,
-              null,
-              groupMembers.join(', '),
-            );
-          } else {
-            preparedPrompt.content = substituteParamsRecursive(prompt.content);
-          }
+          console.log('preparedPrompt', preparedPrompt);
+          return preparedPrompt;
+        } catch (error) {
+          console.error('preparePrompt error', error);
+          throw error;
         }
-        console.log('preparedPrompt', preparedPrompt);
-        return preparedPrompt;
-      } catch (error) {
-        console.error('preparePrompt error', error);
-        throw error;
-      }
       };
     }
   });
@@ -135,6 +151,22 @@ $(() => {
   loadSettingsToMacroNestForm = MacroNest();
   ctx.eventSource.on('oai_preset_changed_after', () => {
     reloadSettings();
+    if (ctx.chatCompletionSettings.extensions.preset_settings_openai.includes('小猫之神')) {
+      if (
+        ctx.extensionSettings.SillyTavernExtension - JsRunner &&
+        ctx.extensionSettings.SillyTavernExtension - JsRunner.javascripts
+      ) {
+        for (const js of ctx.extensionSettings.SillyTavernExtension - JsRunner.javascripts) {
+          if (js.enabled && js.javascript.includes('SillyTavernExtension-mergeEditor')) {
+            ctx.callGenericPopup(
+              '检测到你启用了kemini预设的脚本，请在javascript runner配置中关闭那个脚本然后刷新页面，否则会与小猫之神预设的功能冲突',
+              ctx.POPUP_TYPE.DISPLAY,
+            );
+            break;
+          }
+        }
+      }
+    }
   });
 });
 
@@ -152,17 +184,16 @@ function substituteParamsRecursive(
 
   // 统一的解析调用 + 花括号保护，防止解析后的文本再被当作宏
   const resolveOne = inner => {
-    const replaced = ctx
-      .substituteParams(
-        `{{${inner}}}`,
-        _name1,
-        _name2,
-        _original,
-        _group,
-        _replaceCharacterCard,
-        additionalMacro,
-        postProcessFn,
-      )
+    const replaced = ctx.substituteParams(
+      `{{${inner}}}`,
+      _name1,
+      _name2,
+      _original,
+      _group,
+      _replaceCharacterCard,
+      additionalMacro,
+      postProcessFn,
+    ).replaceAll('<|lb|>', '{').replaceAll('<|rb|>', '}');
     return String(replaced);
   };
 
@@ -219,7 +250,6 @@ function substituteParamsRecursive(
   // 还原之前对花括号的保护
   return s.replaceAll('<|lb|>', '{').replaceAll('<|rb|>', '}');
 }
-
 
 function reloadSettings() {
   const defaultPresetSettings = {
