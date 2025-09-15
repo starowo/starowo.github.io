@@ -82,7 +82,7 @@ $(() => {
       ctx.extensionSettings.SillyTavernExtension - JsRunner.javascripts
     ) {
       for (const js of ctx.extensionSettings.SillyTavernExtension - JsRunner.javascripts) {
-        if (js.enabled && js.javascript.includes('SillyTavernExtension-mergeEditor')) {
+        if (js.enabled && js.javascript && js.javascript.indexOf('SillyTavernExtension-mergeEditor') !== -1) {
           ctx.callGenericPopup(
             '检测到你启用了kemini预设的脚本，请在javascript runner配置中关闭那个脚本然后刷新页面，否则会与小猫之神预设的功能冲突',
             ctx.POPUP_TYPE.DISPLAY,
@@ -157,7 +157,7 @@ $(() => {
         ctx.extensionSettings.SillyTavernExtension - JsRunner.javascripts
       ) {
         for (const js of ctx.extensionSettings.SillyTavernExtension - JsRunner.javascripts) {
-          if (js.enabled && js.javascript.includes('SillyTavernExtension-mergeEditor')) {
+          if (js.enabled && js.javascript && js.javascript.indexOf('SillyTavernExtension-mergeEditor') !== -1) {
             ctx.callGenericPopup(
               '检测到你启用了kemini预设的脚本，请在javascript runner配置中关闭那个脚本然后刷新页面，否则会与小猫之神预设的功能冲突',
               ctx.POPUP_TYPE.DISPLAY,
