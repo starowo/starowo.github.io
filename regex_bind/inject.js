@@ -193,7 +193,7 @@ function substituteParamsRecursive(
       _replaceCharacterCard,
       additionalMacro,
       postProcessFn,
-    ).replaceAll('<|lb|>', '{').replaceAll('<|rb|>', '}');
+    ).replaceAll('{', '<|lb|>').replaceAll('}', '<|rb|>');
     return String(replaced);
   };
 
