@@ -76,7 +76,7 @@ importFromModule('SPresetImports', [
 ]);
 
 $(() => {
-  if (ctx.chatCompletionSettings.extensions.preset_settings_openai.includes('小猫之神')) {
+  if (ctx.chatCompletionSettings.preset_settings_openai.includes('小猫之神')) {
     if (
       ctx.extensionSettings.SillyTavernExtension - JsRunner &&
       ctx.extensionSettings.SillyTavernExtension - JsRunner.javascripts
@@ -151,7 +151,7 @@ $(() => {
   loadSettingsToMacroNestForm = MacroNest();
   ctx.eventSource.on('oai_preset_changed_after', () => {
     reloadSettings();
-    if (ctx.chatCompletionSettings.extensions.preset_settings_openai.includes('小猫之神')) {
+    if (ctx.chatCompletionSettings.preset_settings_openai.includes('小猫之神')) {
       if (
         ctx.extensionSettings.SillyTavernExtension - JsRunner &&
         ctx.extensionSettings.SillyTavernExtension - JsRunner.javascripts
