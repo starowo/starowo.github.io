@@ -76,22 +76,24 @@ importFromModule('SPresetImports', [
 ]);
 
 $(() => {
-  if (ctx.chatCompletionSettings.preset_settings_openai.includes('小猫之神')) {
-    if (
-      ctx.extensionSettings["SillyTavernExtension-JsRunner"] &&
-      ctx.extensionSettings["SillyTavernExtension-JsRunner"].javascripts
-    ) {
-      for (const js of ctx.extensionSettings["SillyTavernExtension-JsRunner"].javascripts) {
-        if (js.enabled && js.javascript && js.javascript.indexOf('SillyTavernExtension-mergeEditor') !== -1) {
-          ctx.callGenericPopup(
-            '检测到你启用了kemini预设的脚本，请在javascript runner配置中关闭那个脚本然后刷新页面，否则会与小猫之神预设的功能冲突',
-            ctx.POPUP_TYPE.DISPLAY,
-          );
-          break;
+  try {
+    if (ctx.chatCompletionSettings.preset_settings_openai.includes('小猫之神')) {
+      if (
+        ctx.extensionSettings["SillyTavernExtension-JsRunner"] &&
+        ctx.extensionSettings["SillyTavernExtension-JsRunner"].javascripts
+      ) {
+        for (const js of ctx.extensionSettings["SillyTavernExtension-JsRunner"].javascripts) {
+          if (js.enabled && js.javascript && js.javascript.indexOf('SillyTavernExtension-mergeEditor') !== -1) {
+            ctx.callGenericPopup(
+              '检测到你启用了kemini预设的脚本，请在javascript runner配置中关闭那个脚本然后刷新页面，否则会与小猫之神预设的功能冲突',
+              ctx.POPUP_TYPE.DISPLAY,
+            );
+            break;
+          }
         }
       }
     }
-  }
+  } catch (ignore) {}
   ctx.eventSource.on('module_imported', data => {
     if (data.id === 'SPresetImports') {
       const originalFunction = SPresetImports.promptManager.preparePrompt;
@@ -149,6 +151,7 @@ $(() => {
   RegexBinding();
   loadSettingsToChatSquashForm = ChatSquash();
   loadSettingsToMacroNestForm = MacroNest();
+  try {
   ctx.eventSource.on('oai_preset_changed_after', () => {
     reloadSettings();
     if (ctx.chatCompletionSettings.preset_settings_openai.includes('小猫之神')) {
@@ -165,9 +168,10 @@ $(() => {
             break;
           }
         }
+        }
       }
-    }
-  });
+    });
+  } catch (ignore) {}
 });
 
 function substituteParamsRecursive(
