@@ -101,10 +101,22 @@ $(() => {
         }
       }
     }
+    const keminiRegex = /Kemini\sAether\s(high|opus|ultra)/;
+    if (keminiRegex.test(ctx.chatCompletionSettings.preset_settings_openai)) {
+      if (
+        !ctx.extensionSettings['SillyTavernExtension-JsRunner'] ||
+        !ctx.extensionSettings['SillyTavernExtension-JsRunner'].javascripts
+      ) {
+        ctx.callGenericPopup(
+          '检测到你正在使用最新kemini预设但没开kemini预设的配套插件，请前往原贴预设楼上面查阅配套插件安装教程',
+          ctx.POPUP_TYPE.DISPLAY,
+        );
+      }
+    }
   } catch (ignore) {}
   ctx.eventSource.on('module_imported', data => {
     if (data.id === 'STVersionImports') {
-      console.log("displayVersion", STVersionImports.displayVersion);
+      console.log('displayVersion', STVersionImports.displayVersion);
       const versionRegex = /1\.13\.[0-1]/;
       if (versionRegex.test(STVersionImports.displayVersion)) {
         oldST = true;
@@ -175,6 +187,18 @@ $(() => {
               );
               break;
             }
+          }
+        }
+        const keminiRegex = /Kemini\sAether\s(high|opus|ultra)/;
+        if (keminiRegex.test(ctx.chatCompletionSettings.preset_settings_openai)) {
+          if (
+            !ctx.extensionSettings['SillyTavernExtension-JsRunner'] ||
+            !ctx.extensionSettings['SillyTavernExtension-JsRunner'].javascripts
+          ) {
+            ctx.callGenericPopup(
+              '检测到你正在使用最新kemini预设但没开kemini预设的配套插件，请前往原贴预设楼上面查阅配套插件安装教程',
+              ctx.POPUP_TYPE.DISPLAY,
+            );
           }
         }
       }
@@ -624,13 +648,13 @@ const ChatSquash = () => {
       return;
     }
 
-    console.log("data", data);
+    console.log('data', data);
     const settings = SPresetSettings.ChatSquash;
     const promptManager = SPresetImports.promptManager;
     if (settings.separate_chat_history) {
       data.chat.length = 0;
       data.chat.push(...getChat(promptManager));
-      console.log("data.chat", data.chat);
+      console.log('data.chat', data.chat);
     } else {
       squashPrompts(data.chat);
     }
