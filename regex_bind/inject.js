@@ -79,10 +79,10 @@ $(() => {
   try {
     if (ctx.chatCompletionSettings.preset_settings_openai.includes('小猫之神')) {
       if (
-        ctx.extensionSettings["SillyTavernExtension-JsRunner"] &&
-        ctx.extensionSettings["SillyTavernExtension-JsRunner"].javascripts
+        ctx.extensionSettings['SillyTavernExtension-JsRunner'] &&
+        ctx.extensionSettings['SillyTavernExtension-JsRunner'].javascripts
       ) {
-        for (const js of ctx.extensionSettings["SillyTavernExtension-JsRunner"].javascripts) {
+        for (const js of ctx.extensionSettings['SillyTavernExtension-JsRunner'].javascripts) {
           if (js.enabled && js.javascript && js.javascript.indexOf('SillyTavernExtension-mergeEditor') !== -1) {
             ctx.callGenericPopup(
               '检测到你启用了kemini预设的脚本，请在javascript runner配置中关闭那个脚本然后刷新页面，否则会与小猫之神预设的功能冲突',
@@ -152,22 +152,22 @@ $(() => {
   loadSettingsToChatSquashForm = ChatSquash();
   loadSettingsToMacroNestForm = MacroNest();
   try {
-  ctx.eventSource.on('oai_preset_changed_after', () => {
-    reloadSettings();
-    if (ctx.chatCompletionSettings.preset_settings_openai.includes('小猫之神')) {
-      if (
-        ctx.extensionSettings["SillyTavernExtension-JsRunner"] &&
-        ctx.extensionSettings["SillyTavernExtension-JsRunner"].javascripts
-      ) {
-        for (const js of ctx.extensionSettings["SillyTavernExtension-JsRunner"].javascripts) {
-          if (js.enabled && js.javascript && js.javascript.indexOf('SillyTavernExtension-mergeEditor') !== -1) {
-            ctx.callGenericPopup(
-              '检测到你启用了kemini预设的脚本，请在javascript runner配置中关闭那个脚本然后刷新页面，否则会与小猫之神预设的功能冲突',
-              ctx.POPUP_TYPE.DISPLAY,
-            );
-            break;
+    ctx.eventSource.on('oai_preset_changed_after', () => {
+      reloadSettings();
+      if (ctx.chatCompletionSettings.preset_settings_openai.includes('小猫之神')) {
+        if (
+          ctx.extensionSettings['SillyTavernExtension-JsRunner'] &&
+          ctx.extensionSettings['SillyTavernExtension-JsRunner'].javascripts
+        ) {
+          for (const js of ctx.extensionSettings['SillyTavernExtension-JsRunner'].javascripts) {
+            if (js.enabled && js.javascript && js.javascript.indexOf('SillyTavernExtension-mergeEditor') !== -1) {
+              ctx.callGenericPopup(
+                '检测到你启用了kemini预设的脚本，请在javascript runner配置中关闭那个脚本然后刷新页面，否则会与小猫之神预设的功能冲突',
+                ctx.POPUP_TYPE.DISPLAY,
+              );
+              break;
+            }
           }
-        }
         }
       }
     });
@@ -188,16 +188,19 @@ function substituteParamsRecursive(
 
   // 统一的解析调用 + 花括号保护，防止解析后的文本再被当作宏
   const resolveOne = inner => {
-    const replaced = ctx.substituteParams(
-      `{{${inner}}}`,
-      _name1,
-      _name2,
-      _original,
-      _group,
-      _replaceCharacterCard,
-      additionalMacro,
-      postProcessFn,
-    ).replaceAll('{', '<|lb|>').replaceAll('}', '<|rb|>');
+    const replaced = ctx
+      .substituteParams(
+        `{{${inner}}}`,
+        _name1,
+        _name2,
+        _original,
+        _group,
+        _replaceCharacterCard,
+        additionalMacro,
+        postProcessFn,
+      )
+      .replaceAll('{', '<|lb|>')
+      .replaceAll('}', '<|rb|>');
     return String(replaced);
   };
 
@@ -281,8 +284,12 @@ function reloadSettings() {
   const defaultGlobalSettings = {
     RegexBinding: {},
   };
-  if (!ctx.chatCompletionSettings.extensions) {
+  if (!ctx.chatCompletionSettings.extensions || !ctx.chatCompletionSettings.extensions.SPreset) {
     ctx.chatCompletionSettings.extensions = {};
+    const settingsFromPrompt = getPrompt('SPresetSettings');
+    if (settingsFromPrompt) {
+      ctx.chatCompletionSettings.extensions.SPreset = JSON.parse(settingsFromPrompt);
+    }
   }
   const temp1 = ctx.chatCompletionSettings.extensions.SPreset;
   if (temp1 && !temp1.ChatSquash) {
@@ -379,6 +386,11 @@ const MacroNest = () => {
       ctx.chatCompletionSettings.extensions = {};
     }
     ctx.chatCompletionSettings.extensions.SPreset = SPresetSettings;
+    if (getPrompt('SPresetSettings')) {
+      setPrompt('SPresetSettings', JSON.stringify(SPresetSettings));
+    } else {
+      addPrompt('SPresetSettings', 'SPreset配置', JSON.stringify(SPresetSettings));
+    }
     ctx.saveSettingsDebounced();
   });
   function loadSettingsToForm() {
@@ -587,6 +599,11 @@ const ChatSquash = () => {
       ctx.chatCompletionSettings.extensions = {};
     }
     ctx.chatCompletionSettings.extensions.SPreset = SPresetSettings;
+    if (getPrompt('SPresetSettings')) {
+      setPrompt('SPresetSettings', JSON.stringify(SPresetSettings));
+    } else {
+      addPrompt('SPresetSettings', 'SPreset配置', JSON.stringify(SPresetSettings));
+    }
     ctx.saveSettingsDebounced();
   }
 
@@ -881,21 +898,6 @@ const RegexBinding = () => {
   }
   // eslint-disable-next-line no-control-regex
   const sanitizeFileName = name => name.replace(/[\s.<>:"/\\|?*\x00-\x1f\x7f]/g, '_').toLowerCase();
-
-  const promptTemplate = {
-    identifier: '',
-    system_prompt: false,
-    enabled: false,
-    marker: false,
-    name: '',
-    role: 'system',
-    content: '',
-    injection_position: 0,
-    injection_depth: 4,
-    injection_order: 100,
-    injection_trigger: null,
-    forbid_overrides: false,
-  };
 
   function getFileText(file) {
     return new Promise((resolve, reject) => {
@@ -2265,7 +2267,7 @@ const RegexBinding = () => {
   }
 
   function getRegexesFromPreset() {
-    if (SPresetSettings.RegexBinding.regexes && Array.isArray(SPresetSettings.RegexBinding.regexes) && SPresetSettings.RegexBinding.regexes.length > 0) {
+    if (SPresetSettings.RegexBinding.regexes && SPresetSettings.RegexBinding.regexes.length > 0) {
       return SPresetSettings.RegexBinding.regexes;
     }
     const json = getPrompt('regexes-bindings') || '';
@@ -2283,41 +2285,60 @@ const RegexBinding = () => {
       ctx.chatCompletionSettings.extensions = {};
     }
     ctx.chatCompletionSettings.extensions.SPreset = SPresetSettings;
+    if (getPrompt('SPresetSettings')) {
+      setPrompt('SPresetSettings', JSON.stringify(SPresetSettings));
+    } else {
+      addPrompt('SPresetSettings', 'SPreset配置', JSON.stringify(SPresetSettings));
+    }
     ctx.saveSettingsDebounced();
   }
-
-  function getPrompt(identifier) {
-    const oai_settings = ctx.chatCompletionSettings;
-    const prompts = oai_settings.prompts;
-    const prompt = prompts.find(p => p.identifier === identifier)?.content;
-    return prompt || null;
-  }
-
-  function setPrompt(identifier, content) {
-    const oai_settings = ctx.chatCompletionSettings;
-    const prompts = oai_settings.prompts;
-    const prompt = prompts.find(p => p.identifier === identifier);
-    if (prompt) {
-      prompt.content = content;
-    }
-  }
-
-  function addPrompt(id, name, content, extras = {}) {
-    const prompt = { ...promptTemplate };
-    prompt.identifier = id;
-    prompt.name = name;
-    prompt.content = content;
-    prompt.role = extras.role || 'system';
-    prompt.system_prompt = extras.system_prompt || false;
-    prompt.enabled = extras.enabled || false;
-    prompt.marker = extras.marker || false;
-    prompt.injection_position = extras.injection_position || 0;
-    prompt.injection_depth = extras.injection_depth || 4;
-    prompt.injection_order = extras.injection_order || 100;
-    prompt.injection_trigger = extras.injection_trigger;
-    prompt.forbid_overrides = extras.forbid_overrides || false;
-    const oai_settings = ctx.chatCompletionSettings;
-    const prompts = oai_settings.prompts;
-    prompts.push(prompt);
-  }
 };
+
+const promptTemplate = {
+  identifier: '',
+  system_prompt: false,
+  enabled: false,
+  marker: false,
+  name: '',
+  role: 'system',
+  content: '',
+  injection_position: 0,
+  injection_depth: 4,
+  injection_order: 100,
+  injection_trigger: null,
+  forbid_overrides: false,
+};
+function getPrompt(identifier) {
+  const oai_settings = ctx.chatCompletionSettings;
+  const prompts = oai_settings.prompts;
+  const prompt = prompts.find(p => p.identifier === identifier)?.content;
+  return prompt || null;
+}
+
+function setPrompt(identifier, content) {
+  const oai_settings = ctx.chatCompletionSettings;
+  const prompts = oai_settings.prompts;
+  const prompt = prompts.find(p => p.identifier === identifier);
+  if (prompt) {
+    prompt.content = content;
+  }
+}
+
+function addPrompt(id, name, content, extras = {}) {
+  const prompt = { ...promptTemplate };
+  prompt.identifier = id;
+  prompt.name = name;
+  prompt.content = content;
+  prompt.role = extras.role || 'system';
+  prompt.system_prompt = extras.system_prompt || false;
+  prompt.enabled = extras.enabled || false;
+  prompt.marker = extras.marker || false;
+  prompt.injection_position = extras.injection_position || 0;
+  prompt.injection_depth = extras.injection_depth || 4;
+  prompt.injection_order = extras.injection_order || 100;
+  prompt.injection_trigger = extras.injection_trigger;
+  prompt.forbid_overrides = extras.forbid_overrides || false;
+  const oai_settings = ctx.chatCompletionSettings;
+  const prompts = oai_settings.prompts;
+  prompts.push(prompt);
+}
