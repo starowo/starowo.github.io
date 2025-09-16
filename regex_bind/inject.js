@@ -22,6 +22,8 @@ let SPresetSettings = {
   MacroNest: false,
 };
 
+let oldST = false;
+
 let SGlobalSettings = {
   RegexBinding: {},
 };
@@ -68,14 +70,20 @@ function importFromModule(container, imports) {
   injectScriptRaw(container + '_imports', injectContent);
 }
 
-importFromModule('SPresetImports', [
-  {
-    items: ['promptManager', 'MessageCollection', 'Message'],
-    from: './scripts/openai',
-  },
-]);
-
 $(() => {
+  importFromModule('SPresetImports', [
+    {
+      items: ['promptManager', 'MessageCollection', 'Message'],
+      from: './scripts/openai',
+    },
+  ]);
+
+  importFromModule('STVersionImports', [
+    {
+      items: ['displayVersion'],
+      from: './script',
+    },
+  ]);
   try {
     if (ctx.chatCompletionSettings.preset_settings_openai.includes('小猫之神')) {
       if (
@@ -95,13 +103,18 @@ $(() => {
     }
   } catch (ignore) {}
   ctx.eventSource.on('module_imported', data => {
+    if (data.id === 'STVersionImports') {
+      console.log("displayVersion", STVersionImports.displayVersion);
+      const versionRegex = /1\.13\.[0-1]/;
+      if (versionRegex.test(STVersionImports.displayVersion)) {
+        oldST = true;
+      }
+    }
     if (data.id === 'SPresetImports') {
       const originalFunction = SPresetImports.promptManager.preparePrompt;
       SPresetImports.promptManager.preparePrompt = function (prompt, original = null) {
-        console.log('preparePrompt', prompt, original);
         if (!SPresetSettings.MacroNest || !prompt.content) {
           const result = originalFunction.apply(this, [prompt, original]);
-          console.log('result', result);
           return result;
         }
         try {
@@ -137,7 +150,6 @@ $(() => {
               preparedPrompt.content = substituteParamsRecursive(prompt.content);
             }
           }
-          console.log('preparedPrompt', preparedPrompt);
           return preparedPrompt;
         } catch (error) {
           console.error('preparePrompt error', error);
@@ -284,7 +296,7 @@ function reloadSettings() {
   const defaultGlobalSettings = {
     RegexBinding: {},
   };
-  if (!ctx.chatCompletionSettings.extensions || !ctx.chatCompletionSettings.extensions.SPreset) {
+  if (oldST || !ctx.chatCompletionSettings.extensions || !ctx.chatCompletionSettings.extensions.SPreset) {
     ctx.chatCompletionSettings.extensions = {};
     const settingsFromPrompt = getPrompt('SPresetSettings');
     if (settingsFromPrompt) {
@@ -611,11 +623,14 @@ const ChatSquash = () => {
     if (!SPresetSettings.ChatSquash.enabled) {
       return;
     }
+
+    console.log("data", data);
     const settings = SPresetSettings.ChatSquash;
     const promptManager = SPresetImports.promptManager;
     if (settings.separate_chat_history) {
       data.chat.length = 0;
       data.chat.push(...getChat(promptManager));
+      console.log("data.chat", data.chat);
     } else {
       squashPrompts(data.chat);
     }
