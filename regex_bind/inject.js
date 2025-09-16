@@ -147,10 +147,6 @@ $(() => {
     }
   });
   reloadSettings();
-  injectSPresetMenu();
-  RegexBinding();
-  loadSettingsToChatSquashForm = ChatSquash();
-  loadSettingsToMacroNestForm = MacroNest();
   try {
     ctx.eventSource.on('oai_preset_changed_after', () => {
       reloadSettings();
@@ -172,6 +168,10 @@ $(() => {
       }
     });
   } catch (ignore) {}
+  injectSPresetMenu();
+  RegexBinding();
+  loadSettingsToChatSquashForm = ChatSquash();
+  loadSettingsToMacroNestForm = MacroNest();
 });
 
 function substituteParamsRecursive(
@@ -1118,22 +1118,12 @@ const RegexBinding = () => {
     }
   }
 
-  ctx.eventSource.on('settings_updated', () => {
+  ctx.eventSource.on('oai_preset_changed_after', () => {
     try {
       const newPresetRegexes = getRegexesFromPreset();
       const oldIdOrder = presetRegexes.map(s => s.id);
       // check if newPresetRegexes is different from presetRegexes
-      let changed = false;
-      if (newPresetRegexes.length !== presetRegexes.length) {
-        changed = true;
-      } else {
-        for (let i = 0; i < presetRegexes.length; i++) {
-          if (newPresetRegexes[i].id !== presetRegexes[i].id) {
-            changed = true;
-            break;
-          }
-        }
-      }
+      let changed = true;
       /*
       if (!extensions.regex[MARK]) {
         reproxy(extensions, 'regex', presetRegexes);
