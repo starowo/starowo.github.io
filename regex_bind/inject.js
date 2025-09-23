@@ -146,15 +146,19 @@ $(() => {
     }
     if (data.id === 'SPresetImports') {
       const originalFunction = SPresetImports.promptManager.preparePrompt;
+      let PromptClass = null;
       SPresetImports.promptManager.preparePrompt = function (prompt, original = null) {
         if (!SPresetSettings.MacroNest || !prompt.content) {
           const result = originalFunction.apply(this, [prompt, original]);
           return result;
         }
         try {
-          const originalResult = originalFunction.apply(this, [prompt, original]);
+          if (!PromptClass) {
+            const originalResult = originalFunction.apply(this, [prompt, original]);
+            PromptClass = originalResult.constructor;
+          }
+
           const groupMembers = this.getActiveGroupCharacters();
-          const PromptClass = originalResult.constructor;
           const preparedPrompt = Reflect.construct(PromptClass, [prompt]);
 
           if (typeof original === 'string') {
@@ -292,7 +296,7 @@ function substituteParamsRecursive(
 
   while (true) {
     let i = 0;
-    let stack = [];
+    const stack = [];
     let replacedThisRound = false;
 
     while (i < s.length) {
@@ -706,7 +710,7 @@ const ChatSquash = () => {
 
     function getChat(chatData) {
       const chat = [];
-      for (let item of chatData.messages.collection) {
+      for (const item of chatData.messages.collection) {
         if (item instanceof SPresetImports.MessageCollection) {
           if (item.identifier === 'chatHistory') {
             chat.push(...squashPrompts(item.getChat()));
@@ -838,7 +842,7 @@ const ChatSquash = () => {
         ')' +
         (order === 2 ? '?' : '') +
         '> *"(/?)(.*)\\1(.*?)" *: *"(.*?)" *</regex>';
-      let matches = content.match(new RegExp(regexPattern, 'gm'));
+      const matches = content.match(new RegExp(regexPattern, 'gm'));
 
       if (matches) {
         for (let i = 0; i < matches.length; i++) {
@@ -1207,7 +1211,7 @@ const RegexBinding = () => {
       const newPresetRegexes = getRegexesFromPreset();
       const oldIdOrder = presetRegexes.map(s => s.id);
       // check if newPresetRegexes is different from presetRegexes
-      let changed = true;
+      const changed = true;
       /*
       if (!extensions.regex[MARK]) {
         reproxy(extensions, 'regex', presetRegexes);
