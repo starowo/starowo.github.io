@@ -1205,8 +1205,13 @@ const RegexBinding = () => {
     }
   }
 
-  ctx.eventSource.on('oai_preset_changed_after', () => {
-    reloadSettings();
+  let presetLoaded = SillyTavern.getContext().chatCompletionSettings.preset_settings_openai;
+
+  ctx.eventSource.on('settings_updated', () => {
+    if (SillyTavern.getContext().chatCompletionSettings.preset_settings_openai !== presetLoaded) {
+      presetLoaded = SillyTavern.getContext().chatCompletionSettings.preset_settings_openai;
+      reloadSettings();
+    }
     try {
       const newPresetRegexes = getRegexesFromPreset();
       const oldIdOrder = presetRegexes.map(s => s.id);
