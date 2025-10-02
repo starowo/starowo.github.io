@@ -200,7 +200,6 @@ $(() => {
   reloadSettings();
   try {
     ctx.eventSource.on('oai_preset_changed_after', () => {
-      reloadSettings();
       if (ctx.chatCompletionSettings.preset_settings_openai.includes('小猫之神')) {
         if (
           ctx.extensionSettings['SillyTavernExtension-JsRunner'] &&
@@ -1207,6 +1206,7 @@ const RegexBinding = () => {
   }
 
   ctx.eventSource.on('oai_preset_changed_after', () => {
+    reloadSettings();
     try {
       const newPresetRegexes = getRegexesFromPreset();
       const oldIdOrder = presetRegexes.map(s => s.id);
@@ -2368,6 +2368,7 @@ const RegexBinding = () => {
     } else {
       addPrompt('SPresetSettings', 'SPreset配置', JSON.stringify(SPresetSettings));
     }
+    deletePrompt('SPresetSettings');
     ctx.saveSettingsDebounced();
   }
 };
@@ -2419,4 +2420,12 @@ function addPrompt(id, name, content, extras = {}) {
   const oai_settings = ctx.chatCompletionSettings;
   const prompts = oai_settings.prompts;
   prompts.push(prompt);
+}
+function deletePrompt(identifier) {
+  const oai_settings = ctx.chatCompletionSettings;
+  const prompts = oai_settings.prompts;
+  const prompt = prompts.find(p => p.identifier === identifier);
+  if (prompt) {
+    prompts.splice(prompts.indexOf(prompt), 1);
+  }
 }
