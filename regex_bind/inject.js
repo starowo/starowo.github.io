@@ -1211,6 +1211,8 @@ const RegexBinding = () => {
     if (SillyTavern.getContext().chatCompletionSettings.preset_settings_openai !== presetLoaded) {
       presetLoaded = SillyTavern.getContext().chatCompletionSettings.preset_settings_openai;
       reloadSettings();
+    } else {
+      return;
     }
     try {
       const newPresetRegexes = getRegexesFromPreset();
