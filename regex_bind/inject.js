@@ -2375,7 +2375,7 @@ const RegexBinding = () => {
     } else {
       addPrompt('SPresetSettings', 'SPreset配置', JSON.stringify(SPresetSettings));
     }
-    deletePrompt('SPresetSettings');
+    deletePrompt('regexes-bindings');
     ctx.saveSettingsDebounced();
   }
 };
