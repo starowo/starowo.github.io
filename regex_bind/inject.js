@@ -1037,7 +1037,9 @@ const RegexBinding = () => {
     !(
       ctx.extensionSettings.LittleWhiteBox &&
       ctx.extensionSettings.LittleWhiteBox.enabled &&
-      ctx.extensionSettings.LittleWhiteBox.characterUpdater
+      ctx.extensionSettings.LittleWhiteBox.characterUpdater &&
+      ctx.extensionSettings.LittleWhiteBox.characterUpdater.enabled &&
+      ctx.extensionSettings.LittleWhiteBox.characterUpdater.presetRegexBindings
     )
   ) {
     const cssStyles = `
@@ -1177,7 +1179,17 @@ const RegexBinding = () => {
   });
 
   renderPresetRegexes();
-  updateSTRegexes();
+  if (
+    !(
+      ctx.extensionSettings.LittleWhiteBox &&
+      ctx.extensionSettings.LittleWhiteBox.enabled &&
+      ctx.extensionSettings.LittleWhiteBox.characterUpdater &&
+      ctx.extensionSettings.LittleWhiteBox.characterUpdater.enabled &&
+      ctx.extensionSettings.LittleWhiteBox.characterUpdater.presetRegexBindings
+    )
+  ) {
+    updateSTRegexes();
+  }
   /*
   $('.regex_settings .collapse_regexes').on('click', function () {
     const icon = $(this).find('i');
@@ -1223,10 +1235,17 @@ const RegexBinding = () => {
     }
     try {
       const newPresetRegexes = getRegexesFromPreset();
-      if (ctx.extensionSettings.LittleWhiteBox && ctx.extensionSettings.LittleWhiteBox.enabled && ctx.extensionSettings.LittleWhiteBox.characterUpdater) {
+      if (
+        ctx.extensionSettings.LittleWhiteBox &&
+        ctx.extensionSettings.LittleWhiteBox.enabled &&
+        ctx.extensionSettings.LittleWhiteBox.characterUpdater &&
+        ctx.extensionSettings.LittleWhiteBox.characterUpdater.enabled &&
+        ctx.extensionSettings.LittleWhiteBox.characterUpdater.presetRegexBindings
+      ) {
         presetRegexes.length = 0;
         presetRegexes.push(...newPresetRegexes);
         renderPresetRegexes();
+        return;
       }
       const oldIdOrder = presetRegexes.map(s => s.id);
       // check if newPresetRegexes is different from presetRegexes
@@ -1290,7 +1309,7 @@ const RegexBinding = () => {
         ...s,
         id: 'preset_' + s.id,
       }));
-      extensions.regex = newPresetRegexes.concat(stRegexes.filter(s => !s.id.startsWith('preset_')));
+      extensions.regex = newPresetRegexes.concat(stRegexes.filter(s => !s.id.startsWith('preset_') && !s.scriptName.startsWith('[s]')));
       ctx.reloadCurrentChat();
     } else {
       presetRegexes.forEach((s, i) => {
@@ -1407,9 +1426,10 @@ const RegexBinding = () => {
     if (
       ctx.extensionSettings.LittleWhiteBox &&
       ctx.extensionSettings.LittleWhiteBox.enabled &&
-      ctx.extensionSettings.LittleWhiteBox.characterUpdater
+      ctx.extensionSettings.LittleWhiteBox.characterUpdater &&
+      ctx.extensionSettings.LittleWhiteBox.characterUpdater.enabled &&
+      ctx.extensionSettings.LittleWhiteBox.characterUpdater.presetRegexBindings
     ) {
-      
       ctx.extensionSettings.regex = ctx.extensionSettings.regex.filter(s => !s.id.startsWith('preset_'));
       if (
         !(
