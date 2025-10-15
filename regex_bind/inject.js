@@ -1039,7 +1039,8 @@ const RegexBinding = () => {
       ctx.extensionSettings.LittleWhiteBox.enabled &&
       ctx.extensionSettings.LittleWhiteBox.characterUpdater &&
       ctx.extensionSettings.LittleWhiteBox.characterUpdater.enabled &&
-      ctx.extensionSettings.LittleWhiteBox.characterUpdater.presetRegexBindings
+      ctx.extensionSettings.LittleWhiteBox.characterUpdater.presetRegexBindings &&
+      $('#xiaobaix_info_modal').length > 0
     )
   ) {
     const cssStyles = `
@@ -1185,7 +1186,8 @@ const RegexBinding = () => {
       ctx.extensionSettings.LittleWhiteBox.enabled &&
       ctx.extensionSettings.LittleWhiteBox.characterUpdater &&
       ctx.extensionSettings.LittleWhiteBox.characterUpdater.enabled &&
-      ctx.extensionSettings.LittleWhiteBox.characterUpdater.presetRegexBindings
+      ctx.extensionSettings.LittleWhiteBox.characterUpdater.presetRegexBindings &&
+      $('#xiaobaix_info_modal').length > 0
     )
   ) {
     updateSTRegexes();
@@ -1240,7 +1242,8 @@ const RegexBinding = () => {
         ctx.extensionSettings.LittleWhiteBox.enabled &&
         ctx.extensionSettings.LittleWhiteBox.characterUpdater &&
         ctx.extensionSettings.LittleWhiteBox.characterUpdater.enabled &&
-        ctx.extensionSettings.LittleWhiteBox.characterUpdater.presetRegexBindings
+        ctx.extensionSettings.LittleWhiteBox.characterUpdater.presetRegexBindings &&
+        $('#xiaobaix_info_modal').length > 0
       ) {
         presetRegexes.length = 0;
         presetRegexes.push(...newPresetRegexes);
@@ -1428,7 +1431,8 @@ const RegexBinding = () => {
       ctx.extensionSettings.LittleWhiteBox.enabled &&
       ctx.extensionSettings.LittleWhiteBox.characterUpdater &&
       ctx.extensionSettings.LittleWhiteBox.characterUpdater.enabled &&
-      ctx.extensionSettings.LittleWhiteBox.characterUpdater.presetRegexBindings
+      ctx.extensionSettings.LittleWhiteBox.characterUpdater.presetRegexBindings &&
+      $('#xiaobaix_info_modal').length > 0
     ) {
       ctx.extensionSettings.regex = ctx.extensionSettings.regex.filter(s => !s.id.startsWith('preset_'));
       if (
