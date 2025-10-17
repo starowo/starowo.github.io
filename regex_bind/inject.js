@@ -1253,7 +1253,7 @@ const RegexBinding = () => {
       const oldIdOrder = presetRegexes.map(s => s.id);
       // check if newPresetRegexes is different from presetRegexes
       const changed = !_.isEqual(newPresetRegexes, presetRegexes);
-      
+
       /*
       if (!extensions.regex[MARK]) {
         reproxy(extensions, 'regex', presetRegexes);
@@ -1341,6 +1341,15 @@ const RegexBinding = () => {
   function syncToST() {
     if (versionNumber >= 11305) {
       ctx.chatCompletionSettings.extensions.regex_scripts = presetRegexes;
+      if (!extensions.preset_allowed_regex) {
+        extensions.preset_allowed_regex = {};
+      }
+      if (!extensions.preset_allowed_regex.openai) {
+        extensions.preset_allowed_regex.openai = [];
+      }
+      if (!extensions.preset_allowed_regex.openai.includes(ctx.chatCompletionSettings.preset_settings_openai)) {
+        extensions.preset_allowed_regex.openai.push(ctx.chatCompletionSettings.preset_settings_openai);
+      }
     }
   }
 
@@ -1359,19 +1368,23 @@ const RegexBinding = () => {
       ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext &&
       ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext.regexBindings
     ) {
-      ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext.regexBindings.scripts.filter(s => {
-        return !SPresetSettings.RegexBinding.regexes.find(s2 => s2.id === s.id);
-      }).forEach(s => {
-        presetRegexes.push(s);
-      });
+      ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext.regexBindings.scripts
+        .filter(s => {
+          return !SPresetSettings.RegexBinding.regexes.find(s2 => s2.id === s.id);
+        })
+        .forEach(s => {
+          presetRegexes.push(s);
+        });
       ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext.regexBindings = null;
     }
     if (ctx.chatCompletionSettings.extensions.regex_scripts) {
-      ctx.chatCompletionSettings.extensions.regex_scripts.filter(s => {
-        return !presetRegexes.find(s2 => s2.id === s.id);
-      }).forEach(s => {
-        presetRegexes.push(s);
-      });
+      ctx.chatCompletionSettings.extensions.regex_scripts
+        .filter(s => {
+          return !presetRegexes.find(s2 => s2.id === s.id);
+        })
+        .forEach(s => {
+          presetRegexes.push(s);
+        });
     }
     if (versionNumber >= 11305) {
       ctx.chatCompletionSettings.extensions.regex_scripts = presetRegexes;
