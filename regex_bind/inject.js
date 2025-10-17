@@ -39,6 +39,25 @@ const settingsDom = $(`
 let loadSettingsToChatSquashForm = null;
 let loadSettingsToMacroNestForm = null;
 
+(() => {
+  const _originalObjectValues = Object.values;
+
+  Object.values = function (target) {
+    const stack = new Error().stack;
+
+    const result = _originalObjectValues.call(Object, target);
+
+    const regexForRegex = /regex\/[^/]+\.js/;
+    if (regexForRegex.test(stack) && stack.includes('getRegexScripts')) {
+      if (result == [0, 1, 2]) {
+        return [0, 2, 1];
+      }
+    }
+
+    return result;
+  };
+})();
+
 function injectScriptRaw(id, content) {
   const script = document.createElement('script');
   script.id = id;
@@ -1043,54 +1062,42 @@ const RegexBinding = () => {
     <input type="file" id="import_regex_preset_file" hidden accept="*.json" multiple />
   `);
 
-  if (
-    !(
-      ctx.extensionSettings.LittleWhiteBox &&
-      ctx.extensionSettings.LittleWhiteBox.enabled &&
-      ctx.extensionSettings.LittleWhiteBox.characterUpdater &&
-      ctx.extensionSettings.LittleWhiteBox.characterUpdater.enabled &&
-      ctx.extensionSettings.LittleWhiteBox.characterUpdater.presetRegexBindings &&
-      $('#xiaobaix_info_modal').length > 0
-    ) &&
-    versionNumber < 11305
-  ) {
-    const cssStyles = `
+  const cssStyles = `
     <style id="regex-binding-css">
       #saved_regex_scripts [id^="preset_"] {
         display: none;
       }
     </style>
   `;
-    if ($('#regex-binding-css').length === 0) {
-      $('head').append(cssStyles);
-    }
-    $('#import_regex').before(importButton);
-    const sortButton = $(`
+  if ($('#regex-binding-css').length === 0) {
+    $('head').append(cssStyles);
+  }
+  $('#import_regex').before(importButton);
+  const sortButton = $(`
     <div id="sort_regexes" class="menu_button menu_button_icon">
       <i class="fa-solid fa-sort"></i>
       <small>预设正则排序</small>
     </div>
   `);
-    sortButton.on('click', async () => {
-      await popupSortPanel();
-    });
-    $('#import_regex').parent().append(sortButton);
-    $('#import_regex_preset').on('click', () => {
-      $('#import_regex_preset_file').click();
-    });
-    $('#import_regex_preset_file').on('change', async function (event) {
-      const inputElement = event.target;
-      for (const file of inputElement.files) {
-        await onImportFile(file);
-      }
-      inputElement.value = '';
-    });
-    $('#open_regex_editor').before(newRegexButton);
-  }
+  sortButton.on('click', async () => {
+    await popupSortPanel();
+  });
+  $('#import_regex').parent().append(sortButton);
+  $('#import_regex_preset').on('click', () => {
+    $('#import_regex_preset_file').click();
+  });
+  $('#import_regex_preset_file').on('change', async function (event) {
+    const inputElement = event.target;
+    for (const file of inputElement.files) {
+      await onImportFile(file);
+    }
+    inputElement.value = '';
+  });
+  $('#open_regex_editor').before(newRegexButton);
 
   function getSelectedScripts() {
     const scripts = presetRegexes;
-    const selector = '#saved_preset_scripts .regex-script-label:has(.regex_bulk_checkbox:checked)';
+    const selector = '#saved_spreset_scripts .regex-script-label:has(.regex_bulk_checkbox:checked)';
     const selectedIds = $(selector)
       .map(function () {
         return $(this).attr('id');
@@ -1154,7 +1161,7 @@ const RegexBinding = () => {
       // 深拷贝
       const oldScripts = JSON.parse(JSON.stringify(presetRegexes));
       presetRegexes.length = 0;
-      $('#saved_preset_scripts')
+      $('#saved_spreset_scripts')
         .children()
         .each(function () {
           const id = $(this).attr('id');
@@ -1191,23 +1198,12 @@ const RegexBinding = () => {
   });
 
   renderPresetRegexes();
-  if (
-    !(
-      ctx.extensionSettings.LittleWhiteBox &&
-      ctx.extensionSettings.LittleWhiteBox.enabled &&
-      ctx.extensionSettings.LittleWhiteBox.characterUpdater &&
-      ctx.extensionSettings.LittleWhiteBox.characterUpdater.enabled &&
-      ctx.extensionSettings.LittleWhiteBox.characterUpdater.presetRegexBindings &&
-      $('#xiaobaix_info_modal').length > 0
-    ) &&
-    versionNumber < 11305
-  ) {
-    updateSTRegexes();
-  }
+  syncRegexes();
+  updateSTRegexes();
   /*
   $('.regex_settings .collapse_regexes').on('click', function () {
     const icon = $(this).find('i');
-    const scripts = $('#saved_preset_scripts');
+    const scripts = $('#saved_spreset_scripts');
     $('.regex_settings .collapse_regexes small').text(icon.hasClass('fa-chevron-up') ? '展开' : '收起');
     if (icon.hasClass('fa-chevron-up')) {
       scripts.hide();
@@ -1221,12 +1217,12 @@ const RegexBinding = () => {
   });
   */
   try {
-    $('#saved_preset_scripts').sortable({
+    $('#saved_spreset_scripts').sortable({
       delay: ctx.isMobile() ? 750 : 50,
       start: window.regexBinding_onSortableStart,
       stop: window.regexBinding_onSortableStop,
     });
-    $('#saved_preset_scripts').sortable('enable');
+    $('#saved_spreset_scripts').sortable('enable');
   } catch (error) {
     const confirm = ctx.callGenericPopup(
       '预设绑定正则出现错误：' + error.message + '<br>点击确定复制错误信息到剪贴板<br>请将错误信息发送到原贴',
@@ -1244,28 +1240,20 @@ const RegexBinding = () => {
     if (SillyTavern.getContext().chatCompletionSettings.preset_settings_openai !== presetLoaded) {
       presetLoaded = SillyTavern.getContext().chatCompletionSettings.preset_settings_openai;
       reloadSettings();
-    } else {
+      if (SPresetSettings.RegexBinding.regexes) {
+        syncToST();
+      }
+    } else if (versionNumber < 11305) {
       return;
+    } else {
+      syncFromST();
     }
     try {
       const newPresetRegexes = getRegexesFromPreset();
-      if (
-        (ctx.extensionSettings.LittleWhiteBox &&
-          ctx.extensionSettings.LittleWhiteBox.enabled &&
-          ctx.extensionSettings.LittleWhiteBox.characterUpdater &&
-          ctx.extensionSettings.LittleWhiteBox.characterUpdater.enabled &&
-          ctx.extensionSettings.LittleWhiteBox.characterUpdater.presetRegexBindings &&
-          $('#xiaobaix_info_modal').length > 0) ||
-        versionNumber >= 11305
-      ) {
-        presetRegexes.length = 0;
-        presetRegexes.push(...newPresetRegexes);
-        renderPresetRegexes();
-        return;
-      }
       const oldIdOrder = presetRegexes.map(s => s.id);
       // check if newPresetRegexes is different from presetRegexes
-      const changed = true;
+      const changed = !_.isEqual(newPresetRegexes, presetRegexes);
+      
       /*
       if (!extensions.regex[MARK]) {
         reproxy(extensions, 'regex', presetRegexes);
@@ -1312,6 +1300,17 @@ const RegexBinding = () => {
   });
 
   function updateSTRegexes() {
+    syncToST();
+    if (versionNumber >= 11305) {
+      const originalLength = extensions.regex.length;
+      extensions.regex = extensions.regex.filter(
+        s => !s.id.startsWith('preset_') && !s.scriptName.startsWith('[s]') && !s['preset-regex'],
+      );
+      if (extensions.regex.length !== originalLength) {
+        ctx.reloadCurrentChat();
+      }
+      return;
+    }
     const stRegexes = extensions.regex.slice();
     updateCss();
     let presetRegexCount = 0;
@@ -1326,7 +1325,7 @@ const RegexBinding = () => {
         id: 'preset_' + s.id,
       }));
       extensions.regex = newPresetRegexes.concat(
-        stRegexes.filter(s => !s.id.startsWith('preset_') && !s.scriptName.startsWith('[s]')),
+        stRegexes.filter(s => !s.id.startsWith('preset_') && !s.scriptName.startsWith('[s]') && !s['preset-regex']),
       );
       ctx.reloadCurrentChat();
     } else {
@@ -1337,6 +1336,54 @@ const RegexBinding = () => {
         };
       });
     }
+  }
+
+  function syncToST() {
+    if (versionNumber >= 11305) {
+      ctx.chatCompletionSettings.extensions.regex_scripts = presetRegexes;
+    }
+  }
+
+  function syncFromST() {
+    if (versionNumber >= 11305) {
+      ctx.chatCompletionSettings.extensions.regex_scripts.forEach(s => {
+        if (!presetRegexes.find(s2 => s2.id === s.id)) {
+          presetRegexes.push(s);
+        }
+      });
+    }
+  }
+
+  function syncRegexes() {
+    if (
+      ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext &&
+      ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext.regexBindings
+    ) {
+      ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext.regexBindings.scripts.filter(s => {
+        return !SPresetSettings.RegexBinding.regexes.find(s2 => s2.id === s.id);
+      }).forEach(s => {
+        presetRegexes.push(s);
+      });
+      ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext.regexBindings = null;
+    }
+    if (ctx.chatCompletionSettings.extensions.regex_scripts) {
+      ctx.chatCompletionSettings.extensions.regex_scripts.filter(s => {
+        return !presetRegexes.find(s2 => s2.id === s.id);
+      }).forEach(s => {
+        presetRegexes.push(s);
+      });
+    }
+    if (versionNumber >= 11305) {
+      ctx.chatCompletionSettings.extensions.regex_scripts = presetRegexes;
+    }
+    SPresetSettings.RegexBinding.regexes = presetRegexes;
+    ctx.chatCompletionSettings.extensions.SPreset = SPresetSettings;
+    if (getPrompt('SPresetSettings')) {
+      setPrompt('SPresetSettings', JSON.stringify(SPresetSettings));
+    } else {
+      addPrompt('SPresetSettings', 'SPreset配置', JSON.stringify(SPresetSettings));
+    }
+    renderPresetRegexes();
   }
 
   function updateCss() {
@@ -1441,87 +1488,15 @@ const RegexBinding = () => {
   }
 
   async function renderPresetRegexes() {
-    if (
-      (ctx.extensionSettings.LittleWhiteBox &&
-        ctx.extensionSettings.LittleWhiteBox.enabled &&
-        ctx.extensionSettings.LittleWhiteBox.characterUpdater &&
-        ctx.extensionSettings.LittleWhiteBox.characterUpdater.enabled &&
-        ctx.extensionSettings.LittleWhiteBox.characterUpdater.presetRegexBindings &&
-        $('#xiaobaix_info_modal').length > 0) ||
-      versionNumber >= 11305
-    ) {
-      ctx.extensionSettings.regex = ctx.extensionSettings.regex.filter(s => !s.id.startsWith('preset_'));
-      if (versionNumber >= 11305) {
-        ctx.extensionSettings.regex = ctx.extensionSettings.regex.filter(
-          s => !s.id.startsWith('preset_') && !s.scriptName.startsWith('[s]'),
-        );
-        if (!SPresetSettings.RegexBinding.adapted) {
-          SPresetSettings.RegexBinding.adapted = true;
-          ctx.chatCompletionSettings.extensions.regex_scripts = presetRegexes;
-          deletePrompt('regexes-bindings');
-          const ext = ctx.extensionSettings;
-          if (!ext.preset_allowed_regex) {
-            ext.preset_allowed_regex = {};
-          }
-          if (!ext.preset_allowed_regex.openai) {
-            ext.preset_allowed_regex.openai = [];
-          }
-          if (!ext.preset_allowed_regex.openai.includes(ctx.chatCompletionSettings.preset_settings_openai)) {
-            ext.preset_allowed_regex.openai.push(ctx.chatCompletionSettings.preset_settings_openai);
-          }
-          if (ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext) {
-            ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext.regexBindings = null;
-          }
-          ctx.saveSettingsDebounced();
-          toastr.info('[SPreset] 已将预设绑定正则自动适配到最新版酒馆');
-          ctx.reloadCurrentChat();
-        }
-        return;
-      }
-      if (
-        !(
-          ctx.chatCompletionSettings.prompt_order[1] &&
-          ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext &&
-          ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext.regexBindings &&
-          ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext.regexBindings.spresetAdapted
-        )
-      ) {
-        const regexBindingForXiaobai = {
-          strategy: 'byEmbed',
-          spresetAdapted: true,
-          scripts: [],
-        };
-        for (const script of presetRegexes) {
-          const copyScript = {
-            ...script,
-            scriptName: '[s]-' + script.scriptName,
-          };
-          regexBindingForXiaobai.scripts.push(copyScript);
-        }
-        if (ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext) {
-          ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext.regexBindings = regexBindingForXiaobai;
-        } else {
-          ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext = {
-            regexBindings: regexBindingForXiaobai,
-          };
-        }
-        for (let i = presetRegexes.length - 1; i >= 0; i--) {
-          if (!ctx.extensionSettings.regex.find(s => s.id === regexBindingForXiaobai.scripts[i].id)) {
-            ctx.extensionSettings.regex.unshift(regexBindingForXiaobai.scripts[i]);
-          }
-        }
-        toastr.info('[SPreset] 已将预设绑定正则适配到 LittleWhiteBox');
-        ctx.reloadCurrentChat();
-      }
-      return;
-    }
-
     injectBindButtons();
     updateCss();
+    if ($('#preset_scripts_block').length > 0) {
+      $('#preset_scripts_block').remove();
+    }
     const regex_settings = $('.regex_settings');
     let block = injectPresetBlock(regex_settings);
 
-    block = block.find('#saved_preset_scripts');
+    block = block.find('#saved_spreset_scripts');
     block.empty();
     presetRegexes.forEach((script, index) => renderScript(block, script, index));
 
@@ -1620,6 +1595,10 @@ const RegexBinding = () => {
           }
         }
         presetRegexes.splice(index, 1);
+        if (versionNumber >= 11305) {
+          ctx.chatCompletionSettings.extensions.regex_scripts =
+            ctx.chatCompletionSettings.extensions.regex_scripts.filter(s => s.id !== script.id);
+        }
         const i = _.findLastIndex(extensions.regex, s => s.id.startsWith('preset_'));
         if (i !== -1) {
           extensions.regex.splice(i, 0, script);
@@ -1629,6 +1608,9 @@ const RegexBinding = () => {
         await renderPresetRegexes();
         saveRegexesToPreset(presetRegexes);
         updateSTRegexes();
+        if (versionNumber >= 11305) {
+          ctx.reloadCurrentChat();
+        }
       });
       scriptDiv.find('.delete_regex').on('click', async function () {
         const chat = await ctx.chat;
@@ -1646,6 +1628,10 @@ const RegexBinding = () => {
         if (i !== -1) {
           lockedRegexes.splice(i, 1);
           saveLockedRegexes(lockedRegexes);
+        }
+        if (versionNumber >= 11305) {
+          ctx.chatCompletionSettings.extensions.regex_scripts =
+            ctx.chatCompletionSettings.extensions.regex_scripts.filter(s => s.id !== script.id);
         }
         await renderPresetRegexes();
         saveRegexesToPreset(presetRegexes);
@@ -1719,7 +1705,7 @@ const RegexBinding = () => {
         <small data-i18n="ext_regex_preset_regexes_desc">
           影响所有角色，保存在预设中。
         </small>
-        <div id="saved_preset_scripts" no-scripts-text="No scripts found" data-i18n="[no-scripts-text]No scripts found" class="flex-container regex-script-container flexFlowColumn"></div>
+        <div id="saved_spreset_scripts" no-scripts-text="No scripts found" data-i18n="[no-scripts-text]No scripts found" class="flex-container regex-script-container flexFlowColumn"></div>
       </div>
       <hr />
       `;
