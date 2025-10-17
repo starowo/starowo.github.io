@@ -21,6 +21,7 @@ let SPresetSettings = {
   },
   MacroNest: false,
 };
+window.versionNumber = 10000;
 
 let oldST = false;
 
@@ -70,7 +71,16 @@ function importFromModule(container, imports) {
   injectScriptRaw(container + '_imports', injectContent);
 }
 
-$(() => {
+$(async () => {
+  await fetch('/version')
+    .then(res => res.json())
+    .then(data => {
+      const version = data.pkgVersion.split('.');
+      window.versionNumber = parseInt(version[0]) * 10000 + parseInt(version[1]) * 100 + parseInt(version[2]);
+    })
+    .catch(() => {
+      window.versionNumber = 10000;
+    });
   importFromModule('SPresetImports', [
     {
       items: ['promptManager', 'MessageCollection', 'Message'],
@@ -1041,7 +1051,8 @@ const RegexBinding = () => {
       ctx.extensionSettings.LittleWhiteBox.characterUpdater.enabled &&
       ctx.extensionSettings.LittleWhiteBox.characterUpdater.presetRegexBindings &&
       $('#xiaobaix_info_modal').length > 0
-    )
+    ) &&
+    versionNumber < 11305
   ) {
     const cssStyles = `
     <style id="regex-binding-css">
@@ -1188,7 +1199,8 @@ const RegexBinding = () => {
       ctx.extensionSettings.LittleWhiteBox.characterUpdater.enabled &&
       ctx.extensionSettings.LittleWhiteBox.characterUpdater.presetRegexBindings &&
       $('#xiaobaix_info_modal').length > 0
-    )
+    ) &&
+    versionNumber < 11305
   ) {
     updateSTRegexes();
   }
@@ -1238,12 +1250,13 @@ const RegexBinding = () => {
     try {
       const newPresetRegexes = getRegexesFromPreset();
       if (
-        ctx.extensionSettings.LittleWhiteBox &&
-        ctx.extensionSettings.LittleWhiteBox.enabled &&
-        ctx.extensionSettings.LittleWhiteBox.characterUpdater &&
-        ctx.extensionSettings.LittleWhiteBox.characterUpdater.enabled &&
-        ctx.extensionSettings.LittleWhiteBox.characterUpdater.presetRegexBindings &&
-        $('#xiaobaix_info_modal').length > 0
+        (ctx.extensionSettings.LittleWhiteBox &&
+          ctx.extensionSettings.LittleWhiteBox.enabled &&
+          ctx.extensionSettings.LittleWhiteBox.characterUpdater &&
+          ctx.extensionSettings.LittleWhiteBox.characterUpdater.enabled &&
+          ctx.extensionSettings.LittleWhiteBox.characterUpdater.presetRegexBindings &&
+          $('#xiaobaix_info_modal').length > 0) ||
+        versionNumber >= 11305
       ) {
         presetRegexes.length = 0;
         presetRegexes.push(...newPresetRegexes);
@@ -1312,7 +1325,9 @@ const RegexBinding = () => {
         ...s,
         id: 'preset_' + s.id,
       }));
-      extensions.regex = newPresetRegexes.concat(stRegexes.filter(s => !s.id.startsWith('preset_') && !s.scriptName.startsWith('[s]')));
+      extensions.regex = newPresetRegexes.concat(
+        stRegexes.filter(s => !s.id.startsWith('preset_') && !s.scriptName.startsWith('[s]')),
+      );
       ctx.reloadCurrentChat();
     } else {
       presetRegexes.forEach((s, i) => {
@@ -1427,14 +1442,42 @@ const RegexBinding = () => {
 
   async function renderPresetRegexes() {
     if (
-      ctx.extensionSettings.LittleWhiteBox &&
-      ctx.extensionSettings.LittleWhiteBox.enabled &&
-      ctx.extensionSettings.LittleWhiteBox.characterUpdater &&
-      ctx.extensionSettings.LittleWhiteBox.characterUpdater.enabled &&
-      ctx.extensionSettings.LittleWhiteBox.characterUpdater.presetRegexBindings &&
-      $('#xiaobaix_info_modal').length > 0
+      (ctx.extensionSettings.LittleWhiteBox &&
+        ctx.extensionSettings.LittleWhiteBox.enabled &&
+        ctx.extensionSettings.LittleWhiteBox.characterUpdater &&
+        ctx.extensionSettings.LittleWhiteBox.characterUpdater.enabled &&
+        ctx.extensionSettings.LittleWhiteBox.characterUpdater.presetRegexBindings &&
+        $('#xiaobaix_info_modal').length > 0) ||
+      versionNumber >= 11305
     ) {
       ctx.extensionSettings.regex = ctx.extensionSettings.regex.filter(s => !s.id.startsWith('preset_'));
+      if (versionNumber >= 11305) {
+        ctx.extensionSettings.regex = ctx.extensionSettings.regex.filter(
+          s => !s.id.startsWith('preset_') && !s.scriptName.startsWith('[s]'),
+        );
+        if (!SPresetSettings.RegexBinding.adapted) {
+          SPresetSettings.RegexBinding.adapted = true;
+          ctx.chatCompletionSettings.extensions.regex_scripts = presetRegexes;
+          deletePrompt('regexes-bindings');
+          const ext = ctx.extensionSettings;
+          if (!ext.preset_allowed_regex) {
+            ext.preset_allowed_regex = {};
+          }
+          if (!ext.preset_allowed_regex.openai) {
+            ext.preset_allowed_regex.openai = [];
+          }
+          if (!ext.preset_allowed_regex.openai.includes(ctx.chatCompletionSettings.preset_settings_openai)) {
+            ext.preset_allowed_regex.openai.push(ctx.chatCompletionSettings.preset_settings_openai);
+          }
+          if (ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext) {
+            ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext.regexBindings = null;
+          }
+          ctx.saveSettingsDebounced();
+          toastr.info('[SPreset] 已将预设绑定正则自动适配到最新版酒馆');
+          ctx.reloadCurrentChat();
+        }
+        return;
+      }
       if (
         !(
           ctx.chatCompletionSettings.prompt_order[1] &&
@@ -1468,6 +1511,7 @@ const RegexBinding = () => {
           }
         }
         toastr.info('[SPreset] 已将预设绑定正则适配到 LittleWhiteBox');
+        ctx.reloadCurrentChat();
       }
       return;
     }
