@@ -1360,6 +1360,8 @@ const RegexBinding = () => {
           presetRegexes.push(s);
         }
       });
+      renderPresetRegexes();
+      saveRegexesToPreset(presetRegexes);
     }
   }
 
@@ -1389,14 +1391,9 @@ const RegexBinding = () => {
     if (versionNumber >= 11305) {
       ctx.chatCompletionSettings.extensions.regex_scripts = presetRegexes;
     }
-    SPresetSettings.RegexBinding.regexes = presetRegexes;
-    ctx.chatCompletionSettings.extensions.SPreset = SPresetSettings;
-    if (getPrompt('SPresetSettings')) {
-      setPrompt('SPresetSettings', JSON.stringify(SPresetSettings));
-    } else {
-      addPrompt('SPresetSettings', 'SPreset配置', JSON.stringify(SPresetSettings));
-    }
+    
     renderPresetRegexes();
+    saveRegexesToPreset(presetRegexes);
   }
 
   function updateCss() {
