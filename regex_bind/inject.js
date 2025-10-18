@@ -1391,7 +1391,7 @@ const RegexBinding = () => {
     if (versionNumber >= 11305) {
       ctx.chatCompletionSettings.extensions.regex_scripts = presetRegexes;
     }
-    
+
     renderPresetRegexes();
     saveRegexesToPreset(presetRegexes);
   }
