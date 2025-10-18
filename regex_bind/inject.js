@@ -1366,6 +1366,7 @@ const RegexBinding = () => {
 
   function syncRegexes() {
     if (
+	  ctx.chatCompletionSettings.prompt_order[1] &&
       ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext &&
       ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext.regexBindings
     ) {
