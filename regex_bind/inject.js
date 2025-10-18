@@ -1361,7 +1361,6 @@ const RegexBinding = () => {
         }
       });
       renderPresetRegexes();
-      saveRegexesToPreset(presetRegexes);
     }
   }
 
