@@ -2354,7 +2354,7 @@ const RegexBinding = () => {
     if (!ctx.extensionSettings.regexBinding_scriptId) {
       return [];
     }
-    if (!TavernHelper) {
+    if (typeof TavernHelper !== 'object') {
       return [];
     }
     const variables = TavernHelper.getVariables({
