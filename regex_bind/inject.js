@@ -21,6 +21,9 @@ let SPresetSettings = {
   },
   MacroNest: false,
 };
+
+window.SPresetTempData = {};
+
 window.versionNumber = 10000;
 
 let oldST = false;
@@ -50,6 +53,9 @@ let loadSettingsToMacroNestForm = null;
     const regexForRegex = /regex\/[^/]+\.js/;
     if (regexForRegex.test(stack) && stack.includes('getRegexScripts')) {
       if (result == [0, 1, 2]) {
+        if (window.versionNumber >= 11400) {
+          return [1, 0, 2];
+        }
         return [0, 2, 1];
       }
     }
@@ -720,7 +726,12 @@ const ChatSquash = () => {
     ctx.saveSettingsDebounced();
   }
 
-  ctx.eventSource.on(ctx.eventTypes.CHAT_COMPLETION_PROMPT_READY, data => {
+  const storeChatCompletionPromptReadyData = data => {
+    window.SPresetTempData.chatCompletionPromptReadyData = data;
+  }
+
+  const handleChatCompletionPromptReady = (ignored) => {
+    const data = window.SPresetTempData.chatCompletionPromptReadyData;
     if (!SPresetSettings.ChatSquash.enabled) {
       return;
     }
@@ -760,6 +771,12 @@ const ChatSquash = () => {
       }
       return chat;
     }
+  };
+
+
+  ctx.eventSource.on(ctx.eventTypes.APP_READY, data => {
+    console.log('APP_READY', data);
+    ctx.eventSource.makeLast(ctx.eventTypes.CHAT_COMPLETION_PROMPT_READY, handleChatCompletionPromptReady);
   });
 
   function squashPrompts(prompts) {
@@ -1366,7 +1383,7 @@ const RegexBinding = () => {
 
   function syncRegexes() {
     if (
-	  ctx.chatCompletionSettings.prompt_order[1] &&
+      ctx.chatCompletionSettings.prompt_order[1] &&
       ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext &&
       ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext.regexBindings
     ) {
@@ -2442,6 +2459,9 @@ const RegexBinding = () => {
       return SGlobalSettings.RegexBinding.lockedRegexes;
     }
     if (!ctx.extensionSettings.regexBinding_scriptId) {
+      return [];
+    }
+    if (!TavernHelper) {
       return [];
     }
     const variables = TavernHelper.getVariables({
