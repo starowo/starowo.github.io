@@ -119,58 +119,6 @@ $(async () => {
       from: './script',
     },
   ]);
-  try {
-    if (ctx.chatCompletionSettings.preset_settings_openai.includes('小猫之神')) {
-      if (
-        ctx.extensionSettings['SillyTavernExtension-JsRunner'] &&
-        ctx.extensionSettings['SillyTavernExtension-JsRunner'].javascripts
-      ) {
-        for (const js of ctx.extensionSettings['SillyTavernExtension-JsRunner'].javascripts) {
-          if (js.enabled && js.javascript && js.javascript.indexOf('SillyTavernExtension-mergeEditor') !== -1) {
-            ctx.callGenericPopup(
-              '检测到你启用了kemini预设的脚本，请在javascript runner配置中关闭那个脚本然后刷新页面，否则会与小猫之神预设的功能冲突',
-              ctx.POPUP_TYPE.DISPLAY,
-            );
-            break;
-          }
-        }
-      }
-      if (extensionSettings.TavernHelper.script.scriptsRepository) {
-        for (const script of extensionSettings.TavernHelper.script.scriptsRepository) {
-          if (script.value.content.includes('SillyTavernExtension-mergeEditor') && script.value.enabled) {
-            ctx.callGenericPopup(
-              '检测到你启用了kemini预设的脚本，请在酒馆助手配置中关闭那个脚本然后刷新页面，否则会与小猫之神预设的功能冲突',
-              ctx.POPUP_TYPE.DISPLAY,
-            );
-            break;
-          }
-        }
-      }
-      const keminiRegex = /Kemini\sAether\s(high|opus|ultra)/;
-      if (keminiRegex.test(ctx.chatCompletionSettings.preset_settings_openai)) {
-        if (
-          !ctx.extensionSettings['SillyTavernExtension-JsRunner'] ||
-          !ctx.extensionSettings['SillyTavernExtension-JsRunner'].javascripts
-        ) {
-          let hasAetherScript = false;
-          if (extensionSettings.TavernHelper.script.scriptsRepository) {
-            for (const script of extensionSettings.TavernHelper.script.scriptsRepository) {
-              if (script.value.content.includes('SillyTavernExtension-mergeEditor')) {
-                hasAetherScript = true;
-                break;
-              }
-            }
-          }
-          if (!hasAetherScript) {
-            ctx.callGenericPopup(
-              '检测到你正在使用最新kemini预设但没开kemini预设的配套插件，请前往原贴预设楼上面查阅配套插件安装教程',
-              ctx.POPUP_TYPE.DISPLAY,
-            );
-          }
-        }
-      }
-    }
-  } catch (ignore) {}
   ctx.eventSource.on('module_imported', data => {
     if (data.id === 'STVersionImports') {
       console.log('displayVersion', STVersionImports.displayVersion);
@@ -233,60 +181,6 @@ $(async () => {
   });
 
   reloadSettings();
-  try {
-    ctx.eventSource.on('oai_preset_changed_after', () => {
-      if (ctx.chatCompletionSettings.preset_settings_openai.includes('小猫之神')) {
-        if (
-          ctx.extensionSettings['SillyTavernExtension-JsRunner'] &&
-          ctx.extensionSettings['SillyTavernExtension-JsRunner'].javascripts
-        ) {
-          for (const js of ctx.extensionSettings['SillyTavernExtension-JsRunner'].javascripts) {
-            if (js.enabled && js.javascript && js.javascript.indexOf('SillyTavernExtension-mergeEditor') !== -1) {
-              ctx.callGenericPopup(
-                '检测到你启用了kemini预设的脚本，请在javascript runner配置中关闭那个脚本然后刷新页面，否则会与小猫之神预设的功能冲突',
-                ctx.POPUP_TYPE.DISPLAY,
-              );
-              break;
-            }
-          }
-        }
-        if (extensionSettings.TavernHelper.script.scriptsRepository) {
-          for (const script of extensionSettings.TavernHelper.script.scriptsRepository && script.value.enabled) {
-            if (script.value.content.includes('SillyTavernExtension-mergeEditor')) {
-              ctx.callGenericPopup(
-                '检测到你启用了kemini预设的脚本，请在酒馆助手配置中关闭那个脚本然后刷新页面，否则会与小猫之神预设的功能冲突',
-                ctx.POPUP_TYPE.DISPLAY,
-              );
-              break;
-            }
-          }
-        }
-        const keminiRegex = /Kemini\sAether\s(high|opus|ultra)/;
-        if (keminiRegex.test(ctx.chatCompletionSettings.preset_settings_openai)) {
-          if (
-            !ctx.extensionSettings['SillyTavernExtension-JsRunner'] ||
-            !ctx.extensionSettings['SillyTavernExtension-JsRunner'].javascripts
-          ) {
-            let hasAetherScript = false;
-            if (extensionSettings.TavernHelper.script.scriptsRepository) {
-              for (const script of extensionSettings.TavernHelper.script.scriptsRepository) {
-                if (script.value.content.includes('SillyTavernExtension-mergeEditor')) {
-                  hasAetherScript = true;
-                  break;
-                }
-              }
-            }
-            if (!hasAetherScript) {
-              ctx.callGenericPopup(
-                '检测到你正在使用最新kemini预设但没开kemini预设的配套插件，请前往原贴预设楼上面查阅配套插件安装教程',
-                ctx.POPUP_TYPE.DISPLAY,
-              );
-            }
-          }
-        }
-      }
-    });
-  } catch (ignore) {}
   injectSPresetMenu();
   RegexBinding();
   loadSettingsToChatSquashForm = ChatSquash();
@@ -728,9 +622,9 @@ const ChatSquash = () => {
 
   const storeChatCompletionPromptReadyData = data => {
     window.SPresetTempData.chatCompletionPromptReadyData = data;
-  }
+  };
 
-  const handleChatCompletionPromptReady = (ignored) => {
+  const handleChatCompletionPromptReady = ignored => {
     const data = window.SPresetTempData.chatCompletionPromptReadyData;
     if (!SPresetSettings.ChatSquash.enabled) {
       return;
@@ -772,7 +666,6 @@ const ChatSquash = () => {
       return chat;
     }
   };
-
 
   ctx.eventSource.on(ctx.eventTypes.APP_READY, data => {
     console.log('APP_READY', data);
