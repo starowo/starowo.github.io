@@ -672,6 +672,11 @@ const ChatSquash = () => {
     ctx.eventSource.makeFirst(ctx.eventTypes.CHAT_COMPLETION_PROMPT_READY, storeChatCompletionPromptReadyData);
     ctx.eventSource.makeLast(ctx.eventTypes.CHAT_COMPLETION_PROMPT_READY, handleChatCompletionPromptReady);
   });
+  ctx.eventSource.on(ctx.eventTypes.SETTINGS_UPDATED, data => {
+    console.log('APP_READY', data);
+    ctx.eventSource.makeFirst(ctx.eventTypes.CHAT_COMPLETION_PROMPT_READY, storeChatCompletionPromptReadyData);
+    ctx.eventSource.makeLast(ctx.eventTypes.CHAT_COMPLETION_PROMPT_READY, handleChatCompletionPromptReady);
+  });
 
   function squashPrompts(prompts) {
     const settings = SPresetSettings.ChatSquash;
