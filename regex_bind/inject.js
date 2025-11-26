@@ -620,6 +620,24 @@ const ChatSquash = () => {
     ctx.saveSettingsDebounced();
   }
 
+  const originalOn = ctx.eventSource.on;
+  ctx.eventSource.on = function (event, listener) {
+    // 都他妈别跟我抢
+    if (event === ctx.eventTypes.CHAT_COMPLETION_SETTINGS_READY) {
+      if (listener.toString().includes('merge config >>>>>>>>>>>>> Final Message Structure <<<<<<<<<<<<<<<<<')) {
+        return originalOn.apply(this, event, (data) => {
+          if (!SPresetSettings.ChatSquash.enabled) {
+            return listener(data);
+          }
+          return;
+        });
+      }
+      return originalOn.apply(this, event, listener);
+    } else {
+      return originalOn.apply(this, event, listener);
+    }
+  };
+
   const storeChatCompletionPromptReadyData = data => {
     window.SPresetTempData.chatCompletionPromptReadyData = data;
   };
