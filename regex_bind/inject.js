@@ -669,7 +669,7 @@ const ChatSquash = () => {
 
   ctx.eventSource.on(ctx.eventTypes.APP_READY, data => {
     console.log('APP_READY', data);
-    ctx.eventSource.makeFirst(ctx.eventTypes.CHAT_COMPLETION_PROMPT_READY, handleChatCompletionPromptReady);
+    ctx.eventSource.makeFirst(ctx.eventTypes.CHAT_COMPLETION_PROMPT_READY, storeChatCompletionPromptReadyData);
     ctx.eventSource.makeLast(ctx.eventTypes.CHAT_COMPLETION_PROMPT_READY, handleChatCompletionPromptReady);
   });
 
