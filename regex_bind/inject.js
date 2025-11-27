@@ -620,7 +620,7 @@ const ChatSquash = () => {
     ctx.saveSettingsDebounced();
   }
 
-  const listenerList = ctx.eventSource[ctx.eventTypes.CHAT_COMPLETION_SETTINGS_READY]
+  const listenerList = ctx.eventSource.events[ctx.eventTypes.CHAT_COMPLETION_SETTINGS_READY]
   for (let i = 0; i < listenerList.length; i++) {
     if (listenerList[i].toString().includes('merge config >>>>>>>>>>>>> Final Message Structure <<<<<<<<<<<<<<<<<')) {
       const originalListener = listenerList[i];
