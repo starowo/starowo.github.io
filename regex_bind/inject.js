@@ -620,18 +620,6 @@ const ChatSquash = () => {
     ctx.saveSettingsDebounced();
   }
 
-  const listenerList = ctx.eventSource.events[ctx.eventTypes.CHAT_COMPLETION_SETTINGS_READY]
-  for (let i = 0; i < listenerList.length; i++) {
-    if (listenerList[i].toString().includes('merge config >>>>>>>>>>>>> Final Message Structure <<<<<<<<<<<<<<<<<')) {
-      const originalListener = listenerList[i];
-      listenerList[i] = (data) => {
-        if (!SPresetSettings.ChatSquash.enabled) {
-          return originalListener(data);
-        }
-        return;
-      }
-    }
-  }
   const originalOn = ctx.eventSource.on;
   ctx.eventSource.on = function (event, listener) {
     // 都他妈别跟我抢
@@ -701,6 +689,22 @@ const ChatSquash = () => {
     console.log('APP_READY', data);
     ctx.eventSource.makeFirst(ctx.eventTypes.CHAT_COMPLETION_PROMPT_READY, storeChatCompletionPromptReadyData);
     ctx.eventSource.makeLast(ctx.eventTypes.CHAT_COMPLETION_PROMPT_READY, handleChatCompletionPromptReady);
+    const listenerList = ctx.eventSource.events[ctx.eventTypes.CHAT_COMPLETION_SETTINGS_READY];
+    if (listenerList) {
+      for (let i = 0; i < listenerList.length; i++) {
+        if (
+          listenerList[i].toString().includes('merge config >>>>>>>>>>>>> Final Message Structure <<<<<<<<<<<<<<<<<')
+        ) {
+          const originalListener = listenerList[i];
+          listenerList[i] = data1 => {
+            if (!SPresetSettings.ChatSquash.enabled) {
+              return originalListener(data1);
+            }
+            return;
+          };
+        }
+      }
+    }
   });
   ctx.eventSource.on(ctx.eventTypes.SETTINGS_UPDATED, data => {
     console.log('APP_READY', data);
