@@ -1231,6 +1231,28 @@ function init() {
   setupCardExpansionTracking();
 }
 
+// 自动调整 textarea 高度（最大高度 400px）
+function autoResizeTextarea(textarea) {
+  if (!textarea) return;
+  const maxHeight = 400;
+  const minHeight = 120;
+
+  // 临时移除最小高度限制，设为 0 以获取真实的 scrollHeight
+  textarea.style.minHeight = '0';
+  textarea.style.height = '0';
+
+  // 计算新高度
+  const scrollHeight = textarea.scrollHeight;
+  const newHeight = Math.min(Math.max(scrollHeight, minHeight), maxHeight);
+
+  // 设置新高度
+  textarea.style.height = newHeight + 'px';
+  textarea.style.minHeight = minHeight + 'px';
+
+  // 根据是否达到最大高度来设置滚动
+  textarea.style.overflowY = scrollHeight > maxHeight ? 'auto' : 'hidden';
+}
+
 // 设置卡片展开追踪（只用于主面板的点击展开功能）
 function setupCardExpansionTracking() {
   // 点击外部区域时收起所有展开的卡片
@@ -1269,6 +1291,13 @@ function toggleCardExpand(itemId) {
     card.classList.remove('click-expanded');
   } else {
     card.classList.add('click-expanded');
+    // 展开后初始化 textarea 高度
+    requestAnimationFrame(() => {
+      const textarea = card.querySelector('textarea[data-field="content"]');
+      if (textarea) {
+        autoResizeTextarea(textarea);
+      }
+    });
   }
 }
 
@@ -1569,7 +1598,9 @@ function createCompactItemHTML(item) {
                             : `<textarea 
                             data-field="content"
                             ${item.readOnly ? 'disabled' : ''}
-                            class="compact-card-input w-full flex-1 min-h-[120px] text-sm font-mono text-slate-700 bg-slate-50 border border-slate-200 rounded p-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none ${
+                            oninput="autoResizeTextarea(this)"
+                            style="min-height: 120px; max-height: 400px; overflow-y: hidden;"
+                            class="compact-card-input w-full text-sm font-mono text-slate-700 bg-slate-50 border border-slate-200 rounded p-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none ${
                               item.readOnly ? 'opacity-70 cursor-not-allowed' : ''
                             }"
                             placeholder="提示词内容...">${item.content}</textarea>`
@@ -2229,6 +2260,7 @@ function createDropPreviewElement(item) {
     opacity: 0.8;
     animation: previewPulse 1s ease-in-out infinite;
     font-family: 'Roboto', sans-serif;
+    pointer-events: none;
   `;
 
   return preview;
