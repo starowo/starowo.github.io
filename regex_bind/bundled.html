@@ -509,7 +509,7 @@ class PromptFlowStore {
     // 检查 unused 和 active
     for (const zone of ['unused', 'active']) {
       const item = this._state[zone].find(i => i.id === id);
-      if (item) return { zone, item: deepClone(item) };
+      if (item) return { zone, folderId: null, item: deepClone(item) };
     }
     // 检查 favorites.items
     const favItem = this._state.favorites.items.find(i => i.id === id);
@@ -772,7 +772,7 @@ class PromptFlowStore {
     // 获取目标列表
     const targetList = this._getTargetList(normalizedTargetZone, targetFolderId);
 
-    // 调整目标索引
+    // 调整目标索引（同一列表向下移动时，因为源已被移除，索引需要减 1）
     let adjustedIndex = targetIndex;
     if (!copy && isSameList && sourceIndex !== -1 && targetIndex > sourceIndex) {
       adjustedIndex = targetIndex - 1;
@@ -1898,6 +1898,9 @@ function toggleReadOnly(zone, id) {
 // --- Drag and Drop Logic (Enhanced Smooth Experience) ---
 
 function handleDragStart(e, zone, id) {
+  // 阻止事件冒泡，防止拖动文件夹内条目时触发文件夹的拖动
+  e.stopPropagation();
+
   const dragHandle = e.target.closest('[draggable="true"]');
   if (!dragHandle) return;
 
@@ -2466,19 +2469,36 @@ function handleFavoritesDrop(e, itemResult) {
 
   // 计算目标位置索引
   let targetIndex = -1;
+
+  // 获取目标列表
+  const favData = Store.getZone('favorites');
+  let targetList = [];
+  if (targetFolderId) {
+    const folder = favData.folders.find(f => f.id === targetFolderId);
+    targetList = folder ? folder.items : [];
+  } else {
+    targetList = favData.items || [];
+  }
+
   if (targetContainer) {
-    const afterElement = getDragAfterElement(targetContainer, e.clientY);
-    if (afterElement) {
-      // 获取目标列表
-      const favData = Store.getZone('favorites');
-      let targetList = [];
-      if (targetFolderId) {
-        const folder = favData.folders.find(f => f.id === targetFolderId);
-        targetList = folder ? folder.items : [];
-      } else {
-        targetList = favData.items || [];
+    // 获取容器中的可拖动元素（排除当前拖动的元素和预览）
+    const cardElements = [...targetContainer.children].filter(el => {
+      if (el.classList.contains('drop-preview')) return false;
+      if (el.classList.contains('pointer-events-none')) return false;
+      if (el.id === dragState.itemId) return false;
+      return el.hasAttribute('draggable');
+    });
+
+    // 找到插入位置
+    for (let i = 0; i < cardElements.length; i++) {
+      const box = cardElements[i].getBoundingClientRect();
+      const middleY = box.top + box.height / 2;
+      if (e.clientY < middleY) {
+        // 找到这个元素在 targetList 中的索引
+        const elId = cardElements[i].id;
+        targetIndex = targetList.findIndex(item => item.id === elId);
+        break;
       }
-      targetIndex = targetList.findIndex(i => i.id === afterElement.id);
     }
   }
 
