@@ -200,6 +200,19 @@ body.is-dragging .compact-card.click-expanded .hide-when-compact {
   }
 }
 
+/* 文件夹拖动时，禁用收藏夹内子元素的拖放事件拦截 */
+body.is-dragging-folder #favorites-zone .favorites-folder *,
+body.is-dragging-folder #favorites-zone .favorites-uncategorized *,
+body.is-dragging-folder #favorites-zone .folder-content,
+body.is-dragging-folder #favorites-zone .folder-header {
+  pointer-events: none;
+}
+
+/* 但保持文件夹容器本身可接收事件 */
+body.is-dragging-folder #favorites-zone .favorites-folder {
+  pointer-events: auto;
+}
+
 </style>
   </head>
   <body class="bg-slate-100 text-slate-800 h-screen flex flex-col overflow-hidden">
@@ -1764,6 +1777,7 @@ function handleFolderDragStart(e, folderId) {
   });
 
   document.body.classList.add('is-dragging');
+  document.body.classList.add('is-dragging-folder'); // 文件夹拖动时禁用子元素拦截
   document.addEventListener('dragover', handleGlobalDragOver);
   document.addEventListener('dragend', handleDragEnd);
 }
@@ -2289,6 +2303,7 @@ function cleanupDrag() {
 
   // Remove dragging class from body
   document.body.classList.remove('is-dragging');
+  document.body.classList.remove('is-dragging-folder');
 
   // Remove global listeners
   document.removeEventListener('dragover', handleGlobalDragOver);
