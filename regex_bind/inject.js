@@ -132,14 +132,14 @@ if (!ctx.isMobile()) {
           gap: 12px;
           width: 100%;
           padding: 12px 20px;
-          background: linear-gradient(135deg, #1a0a0a 0%, #2d1515 50%, #1a0a0a 100%);
-          border: 1px solid #4a1a1a;
+          background: linear-gradient(135deg, #e8f4f8 0%, #f0f8ff 50%, #e8f4f8 100%);
+          border: 1px solid #b3d9e6;
           border-radius: 8px;
           cursor: pointer;
           overflow: hidden;
           transition: all 0.3s ease;
-          box-shadow: 0 4px 15px rgba(139, 0, 0, 0.2),
-                      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+          box-shadow: 0 4px 15px rgba(100, 180, 255, 0.2),
+                      inset 0 1px 0 rgba(255, 255, 255, 0.3);
         }
         
         .spreset-btn::before {
@@ -152,9 +152,9 @@ if (!ctx.isMobile()) {
           background: linear-gradient(
             90deg,
             transparent,
-            rgba(180, 50, 50, 0.3),
-            rgba(255, 100, 100, 0.5),
-            rgba(180, 50, 50, 0.3),
+            rgba(135, 206, 250, 0.4),
+            rgba(173, 216, 230, 0.6),
+            rgba(135, 206, 250, 0.4),
             transparent
           );
           transition: left 0.5s ease;
@@ -174,11 +174,11 @@ if (!ctx.isMobile()) {
           background: conic-gradient(
             from 0deg,
             transparent 0deg,
-            rgba(180, 50, 50, 0.1) 60deg,
+            rgba(135, 206, 250, 0.15) 60deg,
             transparent 120deg,
-            rgba(180, 50, 50, 0.15) 180deg,
+            rgba(173, 216, 230, 0.2) 180deg,
             transparent 240deg,
-            rgba(180, 50, 50, 0.1) 300deg,
+            rgba(135, 206, 250, 0.15) 300deg,
             transparent 360deg
           );
           opacity: 0;
@@ -197,16 +197,16 @@ if (!ctx.isMobile()) {
         }
         
         .spreset-btn:hover {
-          border-color: #8b3030;
-          box-shadow: 0 6px 25px rgba(139, 0, 0, 0.4),
-                      0 0 30px rgba(180, 50, 50, 0.2),
-                      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+          border-color: #87ceeb;
+          box-shadow: 0 6px 25px rgba(100, 180, 255, 0.4),
+                      0 0 30px rgba(135, 206, 250, 0.3),
+                      inset 0 1px 0 rgba(255, 255, 255, 0.5);
           transform: translateY(-2px);
         }
         
         .spreset-btn:active {
           transform: translateY(0);
-          box-shadow: 0 2px 10px rgba(139, 0, 0, 0.3);
+          box-shadow: 0 2px 10px rgba(100, 180, 255, 0.3);
         }
         
         .spreset-btn-logo {
@@ -214,12 +214,12 @@ if (!ctx.isMobile()) {
           height: 32px;
           flex-shrink: 0;
           z-index: 1;
-          filter: drop-shadow(0 0 8px rgba(180, 50, 50, 0.6));
+          filter: drop-shadow(0 0 8px rgba(100, 180, 255, 0.6));
           transition: filter 0.3s ease, transform 0.3s ease;
         }
         
         .spreset-btn:hover .spreset-btn-logo {
-          filter: drop-shadow(0 0 12px rgba(255, 80, 80, 0.8));
+          filter: drop-shadow(0 0 12px rgba(135, 206, 250, 0.8));
           transform: scale(1.1) rotate(5deg);
         }
         
@@ -228,7 +228,7 @@ if (!ctx.isMobile()) {
           font-size: 15px;
           font-weight: 600;
           letter-spacing: 1px;
-          background: linear-gradient(135deg, #e8c4c4 0%, #ffffff 50%, #e8c4c4 100%);
+          background: linear-gradient(135deg, #4a90e2 0%, #2c5aa0 50%, #4a90e2 100%);
           background-size: 200% 200%;
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
@@ -250,14 +250,14 @@ if (!ctx.isMobile()) {
         .spreset-btn-arrow {
           margin-left: auto;
           font-size: 18px;
-          color: #8b4040;
+          color: #6bb6ff;
           z-index: 1;
           transition: transform 0.3s ease, color 0.3s ease;
         }
         
         .spreset-btn:hover .spreset-btn-arrow {
           transform: translateX(5px);
-          color: #ff6060;
+          color: #4a90e2;
         }
         
         /* Particle effect on hover */
@@ -275,7 +275,7 @@ if (!ctx.isMobile()) {
           position: absolute;
           width: 4px;
           height: 4px;
-          background: radial-gradient(circle, rgba(255, 100, 100, 0.8) 0%, transparent 70%);
+          background: radial-gradient(circle, rgba(135, 206, 250, 0.9) 0%, transparent 70%);
           border-radius: 50%;
           opacity: 0;
         }
@@ -316,7 +316,7 @@ if (!ctx.isMobile()) {
           bottom: -2px;
           border-radius: 10px;
           background: linear-gradient(45deg, 
-            #8b0000, #ff4040, #8b0000, #ff4040, #8b0000
+            #87ceeb, #b0e0e6, #87ceeb, #b0e0e6, #87ceeb
           );
           background-size: 400% 400%;
           z-index: -1;
