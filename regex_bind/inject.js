@@ -2654,7 +2654,7 @@ const RegexBinding = () => {
   }
 
   function loadLockedRegexes() {
-    if (SGlobalSettings.RegexBinding.lockedRegexes && SGlobalSettings.RegexBinding.lockedRegexes.length > 0) {
+    if (SGlobalSettings.RegexBinding && SGlobalSettings.RegexBinding.lockedRegexes && SGlobalSettings.RegexBinding.lockedRegexes.length > 0) {
       return SGlobalSettings.RegexBinding.lockedRegexes;
     }
     if (!ctx.extensionSettings.regexBinding_scriptId) {
@@ -2685,6 +2685,7 @@ const RegexBinding = () => {
   }
 
   function saveLockedRegexes(regexes) {
+	if (!SGlobalSettings.RegexBinding) {SGlobalSettings.RegexBinding={}}
     SGlobalSettings.RegexBinding.lockedRegexes = regexes;
     ctx.extensionSettings.SPreset = SGlobalSettings;
     ctx.saveSettingsDebounced();
