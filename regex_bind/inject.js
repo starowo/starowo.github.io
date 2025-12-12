@@ -4,6 +4,7 @@ let SPresetSettings = {
     enabled: false,
     separate_chat_history: false,
     parse_clewd: true,
+    user_role_system: false,
     role: 'assistant',
     enable_stop_string: false,
     stop_string: 'User:',
@@ -541,6 +542,7 @@ function reloadSettings() {
       enabled: false,
       separate_chat_history: false,
       parse_clewd: true,
+      user_role_system: false,
       role: 'assistant',
       stop_string: 'User:',
       user_prefix: '\n\nUser:',
@@ -690,6 +692,9 @@ const ChatSquash = () => {
             <div class="flex-container" title="解析clewd标记">
                 <input type="checkbox" id="parse_clewd"><span>解析clewd标记</span>
             </div>
+            <div class="flex-container" title="系统消息用户角色">
+                <input type="checkbox" id="user_role_system"><span>系统消息用户角色</span>
+            </div>
 
             <hr>
 
@@ -828,6 +833,7 @@ const ChatSquash = () => {
     menu.find('#squash_enabled').prop('checked', SPresetSettings.ChatSquash.enabled);
     menu.find('#separate_chat_history').prop('checked', SPresetSettings.ChatSquash.separate_chat_history);
     menu.find('#parse_clewd').prop('checked', SPresetSettings.ChatSquash.parse_clewd);
+    menu.find('#user_role_system').prop('checked', SPresetSettings.ChatSquash.user_role_system);
     menu.find('#squash_role').val(SPresetSettings.ChatSquash.role);
     menu.find('#stop_string').val(SPresetSettings.ChatSquash.stop_string);
     menu.find('#enable_stop_string').prop('checked', SPresetSettings.ChatSquash.enable_stop_string);
@@ -855,6 +861,7 @@ const ChatSquash = () => {
     SPresetSettings.ChatSquash.enabled = menu.find('#squash_enabled').prop('checked');
     SPresetSettings.ChatSquash.separate_chat_history = menu.find('#separate_chat_history').prop('checked');
     SPresetSettings.ChatSquash.parse_clewd = menu.find('#parse_clewd').prop('checked');
+    SPresetSettings.ChatSquash.user_role_system = menu.find('#user_role_system').prop('checked');
     SPresetSettings.ChatSquash.role = menu.find('#squash_role').val();
     SPresetSettings.ChatSquash.stop_string = menu.find('#stop_string').val();
     SPresetSettings.ChatSquash.enable_stop_string = menu.find('#enable_stop_string').prop('checked');
@@ -995,6 +1002,9 @@ const ChatSquash = () => {
     let mergedContent = '';
 
     for (const prompt of newPrompts) {
+      if (settings.user_role_system && prompt.role === 'system') {
+        prompt.role = 'user';
+      }
       let separate = false;
       if (settings.enable_squashed_separator && settings.squashed_separator_string) {
         if (settings.squashed_separator_regex) {
@@ -1061,7 +1071,9 @@ const ChatSquash = () => {
             mergedContent += ctx.substituteParams(settings.char_prefix);
             break;
         }
-        lastRole = prompt.role;
+        if (!(prompt.role === 'system' && settings.suffix_system === '' && settings.prefix_system === '')) {
+          lastRole = prompt.role;
+        }
       } else {
         mergedContent += '\n';
       }
