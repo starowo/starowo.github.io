@@ -927,6 +927,7 @@ const ChatSquash = () => {
 
     function getChat(chatData) {
       const chat = [];
+      const toSquash = [];
       for (const item of chatData.messages.collection) {
         if (item instanceof SPresetImports.MessageCollection) {
           if (item.identifier === 'chatHistory') {
@@ -942,7 +943,15 @@ const ChatSquash = () => {
             ...(item.tool_calls ? { tool_calls: item.tool_calls } : {}),
             ...(item.role === 'tool' ? { tool_call_id: item.identifier } : {}),
           };
-          chat.push(message);
+          if (item.identifier.startsWith('chatHistory')) {
+            toSquash.push(message);
+          } else {
+            if (toSquash.length > 0) {
+              chat.push(...squashPrompts(toSquash));
+              toSquash.length = 0;
+            }
+            chat.push(message);
+          }
         } else {
           console.warn(`Skipping invalid or empty message in collection: ${JSON.stringify(item)}`);
         }
@@ -2654,7 +2663,11 @@ const RegexBinding = () => {
   }
 
   function loadLockedRegexes() {
-    if (SGlobalSettings.RegexBinding && SGlobalSettings.RegexBinding.lockedRegexes && SGlobalSettings.RegexBinding.lockedRegexes.length > 0) {
+    if (
+      SGlobalSettings.RegexBinding &&
+      SGlobalSettings.RegexBinding.lockedRegexes &&
+      SGlobalSettings.RegexBinding.lockedRegexes.length > 0
+    ) {
       return SGlobalSettings.RegexBinding.lockedRegexes;
     }
     if (!ctx.extensionSettings.regexBinding_scriptId) {
@@ -2685,7 +2698,9 @@ const RegexBinding = () => {
   }
 
   function saveLockedRegexes(regexes) {
-	if (!SGlobalSettings.RegexBinding) {SGlobalSettings.RegexBinding={}}
+    if (!SGlobalSettings.RegexBinding) {
+      SGlobalSettings.RegexBinding = {};
+    }
     SGlobalSettings.RegexBinding.lockedRegexes = regexes;
     ctx.extensionSettings.SPreset = SGlobalSettings;
     ctx.saveSettingsDebounced();
