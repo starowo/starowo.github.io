@@ -1005,7 +1005,7 @@ const ChatSquash = () => {
       if (settings.user_role_system && prompt.role === 'system') {
         prompt.role = 'user';
       }
-      
+
       if (prompt.role === 'system' && settings.suffix_system === '' && settings.prefix_system === '') {
         prompt.role = lastRole;
       }
@@ -1079,6 +1079,7 @@ const ChatSquash = () => {
         mergedContent += '\n';
       }
       mergedContent += prompt.content;
+      lastRole = prompt.role;
     }
     if (mergedContent) {
       switch (lastRole) {
