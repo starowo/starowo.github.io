@@ -1005,6 +1005,10 @@ const ChatSquash = () => {
       if (settings.user_role_system && prompt.role === 'system') {
         prompt.role = 'user';
       }
+      
+      if (prompt.role === 'system' && settings.suffix_system === '' && settings.prefix_system === '') {
+        prompt.role = lastRole;
+      }
       let separate = false;
       if (settings.enable_squashed_separator && settings.squashed_separator_string) {
         if (settings.squashed_separator_regex) {
@@ -1049,31 +1053,27 @@ const ChatSquash = () => {
         continue;
       }
       if (prompt.role !== lastRole) {
-        if (!(prompt.role === 'system' && settings.suffix_system === '' && settings.prefix_system === '')) {
-          lastRole = prompt.role;
-        } else {
-          switch (lastRole) {
-            case 'system':
-              mergedContent += ctx.substituteParams(settings.suffix_system);
-              break;
-            case 'user':
-              mergedContent += ctx.substituteParams(settings.user_suffix);
-              break;
-            case 'assistant':
-              mergedContent += ctx.substituteParams(settings.char_suffix);
-              break;
-          }
-          switch (prompt.role) {
-            case 'system':
-              mergedContent += ctx.substituteParams(settings.prefix_system);
-              break;
-            case 'user':
-              mergedContent += ctx.substituteParams(settings.user_prefix);
-              break;
-            case 'assistant':
-              mergedContent += ctx.substituteParams(settings.char_prefix);
-              break;
-          }
+        switch (lastRole) {
+          case 'system':
+            mergedContent += ctx.substituteParams(settings.suffix_system);
+            break;
+          case 'user':
+            mergedContent += ctx.substituteParams(settings.user_suffix);
+            break;
+          case 'assistant':
+            mergedContent += ctx.substituteParams(settings.char_suffix);
+            break;
+        }
+        switch (prompt.role) {
+          case 'system':
+            mergedContent += ctx.substituteParams(settings.prefix_system);
+            break;
+          case 'user':
+            mergedContent += ctx.substituteParams(settings.user_prefix);
+            break;
+          case 'assistant':
+            mergedContent += ctx.substituteParams(settings.char_prefix);
+            break;
         }
       } else {
         mergedContent += '\n';
