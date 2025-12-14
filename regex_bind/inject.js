@@ -1006,7 +1006,7 @@ const ChatSquash = () => {
         prompt.role = 'user';
       }
 
-      if (prompt.role === 'system' && settings.suffix_system === '' && settings.prefix_system === '') {
+      if (lastRole && prompt.role === 'system' && settings.suffix_system === '' && settings.prefix_system === '') {
         prompt.role = lastRole;
       }
       let separate = false;
