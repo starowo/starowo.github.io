@@ -1002,6 +1002,9 @@ const ChatSquash = () => {
     let mergedContent = '';
 
     for (const prompt of newPrompts) {
+      if (!prompt.content) {
+        continue;
+      }
       if (settings.user_role_system && prompt.role === 'system') {
         prompt.role = 'user';
       }
