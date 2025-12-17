@@ -838,7 +838,11 @@ const ChatSquash = () => {
     menu.find('#stop_string').val(SPresetSettings.ChatSquash.stop_string);
     menu.find('#enable_stop_string').prop('checked', SPresetSettings.ChatSquash.enable_stop_string);
     if (SPresetSettings.ChatSquash.enable_stop_string && SPresetSettings.ChatSquash.stop_string) {
-      ctx.powerUserSettings.custom_stopping_strings = JSON.stringify([SPresetSettings.ChatSquash.stop_string]);
+      try {
+        ctx.powerUserSettings.custom_stopping_strings = JSON.stringify(JSON.parse(SPresetSettings.ChatSquash.stop_string));
+      } catch (e) {
+        ctx.powerUserSettings.custom_stopping_strings = JSON.stringify([SPresetSettings.ChatSquash.stop_string]);
+      }
     }
     menu.find('#user_prefix').val(SPresetSettings.ChatSquash.user_prefix);
     menu.find('#user_suffix').val(SPresetSettings.ChatSquash.user_suffix);
