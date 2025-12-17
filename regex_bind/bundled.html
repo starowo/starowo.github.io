@@ -420,6 +420,24 @@ body.is-dragging .compact-card.click-expanded .hide-when-compact {
   display: none;
 }
 
+/* 拖拽手柄 - 阻止触摸默认行为 */
+.drag-handle {
+  touch-action: none; /* 完全阻止浏览器默认触摸行为 */
+  -webkit-touch-callout: none; /* 阻止长按弹出菜单 (iOS) */
+  -webkit-user-select: none; /* 阻止文本选择 */
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* 拖拽时整个页面禁用滚动和选择 */
+body.is-dragging {
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+  overflow: hidden; /* 防止拖拽时页面滚动 */
+}
+
 /* 触摸拖拽时的视觉反馈 */
 .touch-dragging {
   opacity: 0.6;
@@ -1910,6 +1928,9 @@ function handleTouchStart(e) {
   const dragHandle = e.target.closest('.drag-handle[draggable="true"]');
   if (!dragHandle) return;
   
+  // 阻止长按弹出上下文菜单等默认行为
+  e.preventDefault();
+  
   const cardElement = dragHandle.closest('.compact-card') || dragHandle.closest('[draggable="true"]');
   if (!cardElement) return;
   
@@ -1945,6 +1966,9 @@ function handleTouchStart(e) {
 function handleTouchMove(e) {
   if (!dragState.isTouchDrag || !dragState.itemData) return;
   
+  // 阻止默认滚动行为
+  e.preventDefault();
+  
   const touch = e.touches[0];
   const moveX = Math.abs(touch.clientX - dragState.touchStartX);
   const moveY = Math.abs(touch.clientY - dragState.touchStartY);
@@ -1966,8 +1990,6 @@ function handleTouchMove(e) {
   }
   
   if (dragState.touchMoved) {
-    e.preventDefault(); // 阻止滚动
-    
     // 更新幽灵位置
     if (dragState.ghostElement) {
       dragState.ghostElement.style.left = `${touch.clientX - dragState.offsetX}px`;
