@@ -13,6 +13,186 @@
     <style>
 body {
   font-family: 'Roboto', sans-serif;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+/* ============================================================================
+   深色模式样式 - 修复版 (Classic Slate Dark)
+   修复重点：提升对比度，拒绝“黑洞”效果，清晰的边框
+   ============================================================================ */
+
+body.dark-mode {
+  background-color: #0f172a; /* Slate 900 - 深蓝灰背景，不刺眼 */
+  color: #e2e8f0; /* Slate 200 - 标准亮色文字 */
+}
+
+/* Header */
+body.dark-mode header {
+  background-color: #1e293b; /* Slate 800 */
+  border-bottom: 1px solid #334155; /* 清晰的分割线 */
+}
+
+body.dark-mode header h1 {
+  color: #f1f5f9;
+}
+
+/* Main sections Layout */
+body.dark-mode .unused-section,
+body.dark-mode .favorites-section {
+  background-color: #0f172a;
+  border-color: #334155; /* 增加边框可见度 */
+}
+
+body.dark-mode .active-section {
+  background-color: #0f172a;
+  /* 给中间区域加一点点背景区分，或者保持一致 */
+}
+
+/* Zone Headers */
+body.dark-mode .zone-header {
+  background-color: #1e293b !important; /* 标题栏明显亮于背景 */
+  border-bottom: 1px solid #334155;
+}
+
+body.dark-mode .zone-header h2 {
+  color: #cbd5e1;
+  font-weight: 600;
+}
+
+body.dark-mode .zone-content {
+  background-color: #0f172a;
+}
+
+/* =========================================
+   Cards - 核心修复区域
+   ========================================= */
+
+/* 紧凑卡片 (未展开) */
+body.dark-mode .compact-card .show-when-compact {
+  background-color: #1e293b; /* Slate 800 - 比背景亮，形成层级 */
+  border: 1px solid #334155; /* 明显的深灰边框 */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+body.dark-mode .compact-card .content-area:hover {
+  background-color: #334155; /* 悬停明显变亮 */
+}
+
+body.dark-mode .compact-card .drag-handle {
+  border-right: 1px solid #334155;
+  background-color: #1e293b;
+  color: #64748b;
+}
+
+body.dark-mode .compact-card .drag-handle:hover {
+  background-color: #334155;
+  color: #cbd5e1;
+}
+
+/* 禁用状态 */
+body.dark-mode .compact-card.item-disabled .show-when-compact {
+  background-color: #0f172a !important; /* 变暗 */
+  border-color: #1e293b;
+  opacity: 0.6;
+}
+
+body.dark-mode .compact-card.item-disabled .show-when-compact * {
+  color: #64748b !important;
+}
+
+/* 展开后的面板 */
+body.dark-mode .compact-card .hide-when-compact {
+  background-color: #1e293b; /* 与卡片头一致 */
+  border: 1px solid #334155;
+  border-top: none;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+}
+
+/* 输入框修复 - 不再是黑洞 */
+body.dark-mode .compact-card-input,
+body.dark-mode [draggable="true"] input,
+body.dark-mode [draggable="true"] textarea,
+body.dark-mode [draggable="true"] select {
+  background-color: #020617 !important; /* Slate 950 - 深色底 */
+  border: 1px solid #475569 !important; /* Slate 600 - 亮边框！关键！ */
+  color: #f8fafc !important; /* 近乎纯白文字 */
+  border-radius: 4px;
+}
+
+body.dark-mode .compact-card-input:focus,
+body.dark-mode [draggable="true"] input:focus,
+body.dark-mode [draggable="true"] textarea:focus {
+  border-color: #3b82f6 !important; /* 聚焦变蓝 */
+  background-color: #020617 !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+/* 常规卡片 (Unused / Favorites) */
+body.dark-mode [draggable="true"].bg-white {
+  background-color: #1e293b !important;
+  border: 1px solid #334155 !important;
+}
+
+/* Text Colors 修正 */
+body.dark-mode .text-slate-700 { color: #f1f5f9 !important; } /* 标题亮白 */
+body.dark-mode .text-slate-600 { color: #cbd5e1 !important; } /* 正文灰白 */
+body.dark-mode .text-slate-500 { color: #94a3b8 !important; } /* 辅助信息 */
+body.dark-mode .text-slate-400 { color: #64748b !important; }
+body.dark-mode .text-slate-300 { color: #475569 !important; }
+
+/* Favorites folder */
+body.dark-mode .favorites-folder {
+  background-color: rgba(251, 191, 36, 0.05) !important;
+  border: 1px solid rgba(251, 191, 36, 0.2) !important;
+}
+body.dark-mode .folder-header {
+  background-color: rgba(251, 191, 36, 0.1) !important;
+  border-bottom: 1px solid rgba(251, 191, 36, 0.1);
+}
+
+/* Drop zone & Ghost */
+body.dark-mode .drop-zone-active {
+  background-color: rgba(59, 130, 246, 0.1) !important;
+  outline-color: #3b82f6;
+}
+
+body.dark-mode .drag-ghost {
+  background-color: #1e293b !important;
+  border: 1px solid #3b82f6 !important;
+  color: #fff;
+}
+
+body.dark-mode .drop-preview {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(147, 51, 234, 0.2)) !important;
+  border: 1px dashed #60a5fa;
+}
+
+/* Mobile Actions */
+body.dark-mode .mobile-action-btn {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+  color: #cbd5e1 !important;
+}
+
+/* Scrollbars */
+body.dark-mode ::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+body.dark-mode ::-webkit-scrollbar-thumb {
+  background: #475569;
+  border: 1px solid #0f172a;
+}
+body.dark-mode ::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Toggle Button */
+body.dark-mode .dark-mode-toggle {
+  border-color: #475569;
+  color: #fbbf24;
+}
+body.dark-mode .dark-mode-toggle:hover {
+  background-color: #334155;
 }
 
 /* Custom Scrollbar */
@@ -200,6 +380,252 @@ body.is-dragging .compact-card.click-expanded .hide-when-compact {
   }
 }
 
+/* ============================================================================
+   移动端适配样式
+   ============================================================================ */
+
+/* 可折叠区域标题栏 */
+.zone-header {
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s;
+}
+
+.zone-header:hover {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+.zone-header .collapse-icon {
+  transition: transform 0.2s ease;
+}
+
+.zone-header.collapsed .collapse-icon {
+  transform: rotate(-90deg);
+}
+
+.zone-content {
+  transition: max-height 0.3s ease, opacity 0.2s ease, padding 0.2s ease;
+  overflow: hidden;
+}
+
+.zone-content.collapsed {
+  max-height: 0 !important;
+  opacity: 0;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+/* 移动端便捷菜单按钮 */
+.mobile-actions {
+  display: none;
+}
+
+/* 触摸拖拽时的视觉反馈 */
+.touch-dragging {
+  opacity: 0.6;
+  transform: scale(0.98);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+/* 触摸拖拽幽灵元素 */
+.touch-ghost {
+  position: fixed;
+  pointer-events: none;
+  z-index: 10000;
+  opacity: 0.9;
+  transform: rotate(1deg) scale(1.02);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+  transition: none;
+}
+
+/* 移动端媒体查询 */
+@media (max-width: 768px) {
+  /* 隐藏收藏夹区域 */
+  .favorites-section {
+    display: none !important;
+  }
+
+  /* 主区域垂直排列 */
+  main {
+    flex-direction: column !important;
+  }
+
+  /* 未使用项目区域 */
+  .unused-section {
+    order: 1;
+    flex: none !important;
+    min-width: 100% !important;
+    max-height: 40vh;
+    border-right: none !important;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  /* 激活的提示词区域 */
+  .active-section {
+    order: 2;
+    flex: 1 !important;
+    min-width: 100% !important;
+    min-height: 0;
+  }
+
+  /* 区域内容区域高度调整 */
+  .unused-section .zone-content {
+    max-height: calc(40vh - 50px);
+  }
+
+  .active-section .zone-content {
+    max-height: none;
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  /* 显示移动端便捷按钮 */
+  .mobile-actions {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    padding-top: 8px;
+    margin-top: 8px;
+    border-top: 1px solid #e2e8f0;
+  }
+
+  .mobile-action-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 10px;
+    font-size: 11px;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    color: #475569;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+
+  .mobile-action-btn:hover,
+  .mobile-action-btn:active {
+    background: #e2e8f0;
+    border-color: #cbd5e1;
+  }
+
+  .mobile-action-btn .material-symbols-outlined {
+    font-size: 16px;
+  }
+
+  .mobile-action-btn.move-up,
+  .mobile-action-btn.move-down {
+    background: #f0f9ff;
+    border-color: #bae6fd;
+    color: #0369a1;
+  }
+
+  .mobile-action-btn.move-to-unused {
+    background: #fefce8;
+    border-color: #fde047;
+    color: #a16207;
+  }
+
+  .mobile-action-btn.move-to-active {
+    background: #f0fdf4;
+    border-color: #86efac;
+    color: #15803d;
+  }
+
+  /* 折叠图标显示 */
+  .collapse-icon {
+    display: inline-flex !important;
+  }
+
+  /* 隐藏非移动端才需要的元素 */
+  .hide-on-mobile {
+    display: none !important;
+  }
+
+  /* 紧凑卡片在移动端的调整 */
+  .compact-card .show-when-compact {
+    height: auto;
+    min-height: 50px;
+  }
+
+  .compact-card .drag-handle {
+    padding: 8px 12px;
+  }
+
+  /* 展开面板调整 */
+  .compact-card .hide-when-compact {
+    position: relative;
+    top: 0;
+    box-shadow: none;
+    border: 1px solid #e2e8f0;
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    margin-top: -1px;
+  }
+
+  .compact-card.click-expanded {
+    margin-bottom: 16px;
+  }
+
+  .compact-card.click-expanded .show-when-compact {
+    border-radius: 6px 6px 0 0;
+  }
+
+  /* Header 调整 */
+  header {
+    padding: 0 12px;
+  }
+
+  header h1 {
+    font-size: 14px;
+  }
+
+  /* 触摸友好的点击区域 */
+  .zone-header {
+    min-height: 48px;
+  }
+
+  /* 优化触摸拖拽体验 */
+  .drag-handle {
+    min-width: 60px;
+    min-height: 48px;
+  }
+}
+
+/* 小屏幕手机适配 */
+@media (max-width: 480px) {
+  .unused-section {
+    max-height: 35vh;
+  }
+
+  .unused-section .zone-content {
+    max-height: calc(35vh - 50px);
+  }
+
+  .mobile-action-btn {
+    padding: 5px 8px;
+    font-size: 10px;
+  }
+
+  .mobile-action-btn .material-symbols-outlined {
+    font-size: 14px;
+  }
+
+  /* 紧凑卡片更紧凑 */
+  .compact-card {
+    margin-bottom: 6px;
+  }
+
+  .compact-card .drag-handle {
+    padding: 6px 8px;
+  }
+
+  .compact-card .content-area {
+    padding: 6px 8px;
+  }
+}
+
 </style>
   </head>
   <body class="bg-slate-100 text-slate-800 h-screen flex flex-col overflow-hidden">
@@ -211,7 +637,15 @@ body.is-dragging .compact-card.click-expanded .hide-when-compact {
         <img src="data:image/png;base64,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" alt="Singularity" class="h-6 w-6" />
         <h1 class="font-bold text-lg text-slate-700">SPreset Editor</h1>
       </div>
-      <div class="flex gap-3">
+      <div class="flex gap-3 items-center">
+        <button
+          id="btn-dark-mode"
+          onclick="toggleDarkMode()"
+          class="dark-mode-toggle"
+          title="切换深色模式"
+        >
+          <span class="material-symbols-outlined text-[20px]" id="dark-mode-icon">dark_mode</span>
+        </button>
         <button
           id="btn-save-preset"
           class="flex items-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded text-sm font-medium transition-colors"
@@ -234,13 +668,15 @@ body.is-dragging .compact-card.click-expanded .hide-when-compact {
     <!-- Main Workspace -->
     <main class="flex-1 flex flex-col md:flex-row overflow-hidden relative">
       <!-- Zone 1: Unused Items (Left) -->
-      <section class="flex-1 min-w-[300px] flex flex-col border-r border-slate-200 bg-slate-50">
-        <div class="p-3 border-b border-slate-200 bg-slate-100 flex justify-between items-center">
+      <section class="unused-section flex-1 min-w-[300px] flex flex-col border-r border-slate-200 bg-slate-50">
+        <div class="zone-header p-3 border-b border-slate-200 bg-slate-100 flex justify-between items-center" onclick="toggleZoneCollapse('unused')">
           <h2 class="font-semibold text-slate-600 flex items-center gap-2">
+            <span class="collapse-icon material-symbols-outlined text-[16px] text-slate-400 hidden md:hidden">keyboard_arrow_down</span>
             <span class="material-symbols-outlined text-[20px]">inbox</span> 未使用项目
+            <span class="zone-count text-xs text-slate-400 bg-slate-200 px-1.5 py-0.5 rounded-full hidden" id="unused-count">0</span>
           </h2>
           <button
-            onclick="createNewItem('unused')"
+            onclick="event.stopPropagation(); createNewItem('unused')"
             class="text-slate-400 hover:text-indigo-600 transition-colors"
             title="添加新项目"
           >
@@ -249,7 +685,7 @@ body.is-dragging .compact-card.click-expanded .hide-when-compact {
         </div>
         <div
           id="unused-zone"
-          class="flex-1 overflow-y-auto p-3 space-y-3"
+          class="zone-content flex-1 overflow-y-auto p-3 space-y-3"
           ondragover="handleDragOver(event)"
           ondrop="handleDrop(event, 'unused')"
           ondragleave="handleDragLeave(event)"
@@ -259,15 +695,17 @@ body.is-dragging .compact-card.click-expanded .hide-when-compact {
       </section>
 
       <!-- Zone 2: Active Items (Center - Main) -->
-      <section class="flex-[2] min-w-[350px] flex flex-col bg-white shadow-xl z-10">
-        <div class="p-3 border-b border-slate-200 bg-white flex justify-between items-center">
+      <section class="active-section flex-[2] min-w-[350px] flex flex-col bg-white shadow-xl z-10">
+        <div class="zone-header p-3 border-b border-slate-200 bg-white flex justify-between items-center" onclick="toggleZoneCollapse('active')">
           <h2 class="font-semibold text-indigo-900 flex items-center gap-2">
+            <span class="collapse-icon material-symbols-outlined text-[16px] text-indigo-400 hidden md:hidden">keyboard_arrow_down</span>
             <span class="material-symbols-outlined text-[20px] text-indigo-600">play_circle</span> 激活的提示词链
+            <span class="zone-count text-xs text-indigo-400 bg-indigo-100 px-1.5 py-0.5 rounded-full hidden" id="active-count">0</span>
           </h2>
-          <div class="text-xs text-slate-400">顺序 & 注入</div>
+          <div class="text-xs text-slate-400 hide-on-mobile">顺序 & 注入</div>
         </div>
 
-        <div class="flex-1 overflow-y-auto bg-slate-50/50 p-4 relative">
+        <div class="zone-content flex-1 overflow-y-auto bg-slate-50/50 p-4 relative">
           <!-- Sequential List Container -->
           <div class="mb-6">
             <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 pl-1">顺序流程</h3>
@@ -302,7 +740,7 @@ body.is-dragging .compact-card.click-expanded .hide-when-compact {
             </h3>
             <div
               id="active-injected-zone"
-              class="min-h-[80px] space-y-3 bg-purple-50/30 rounded-lg p-2 border border-purple-100"
+              class="min-h-[80px] space-y-3"
               ondragover="handleDragOver(event)"
               ondrop="handleDrop(event, 'active-injected')"
               ondragleave="handleDragLeave(event)"
@@ -313,8 +751,8 @@ body.is-dragging .compact-card.click-expanded .hide-when-compact {
         </div>
       </section>
 
-      <!-- Zone 3: Favorites (Right) -->
-      <section class="flex-1 min-w-[300px] flex flex-col border-l border-slate-200 bg-slate-50">
+      <!-- Zone 3: Favorites (Right) - Hidden on mobile -->
+      <section class="favorites-section flex-1 min-w-[300px] flex flex-col border-l border-slate-200 bg-slate-50">
         <div class="p-3 border-b border-slate-200 bg-amber-50 flex justify-between items-center">
           <h2 class="font-semibold text-amber-700 flex items-center gap-2">
             <span class="material-symbols-outlined text-[20px]">star</span> 收藏 / 模板
@@ -1219,7 +1657,27 @@ const dragState = {
   offsetY: 0,
   currentDropZone: null,
   currentDropIndex: -1,
+  // 触摸拖拽状态
+  isTouchDrag: false,
+  touchStartX: 0,
+  touchStartY: 0,
+  touchMoved: false,
 };
+
+// 移动端状态
+const mobileState = {
+  isMobile: false,
+  zoneCollapsed: {
+    unused: false,
+    active: false,
+  },
+};
+
+// 检测是否为移动端
+function checkMobile() {
+  mobileState.isMobile = window.innerWidth <= 768;
+  return mobileState.isMobile;
+}
 
 // 便捷引用 Store API
 const uuid = Store.generateId;
@@ -1227,8 +1685,98 @@ const uuid = Store.generateId;
 // --- Core Rendering Functions ---
 
 function init() {
+  checkMobile();
+  loadDarkModePreference();
+  window.addEventListener('resize', debounce(() => {
+    const wasMobile = mobileState.isMobile;
+    checkMobile();
+    if (wasMobile !== mobileState.isMobile) {
+      renderAll();
+    }
+    updateZoneCounts();
+  }, 150));
+  
   renderAll();
   setupCardExpansionTracking();
+  setupTouchDragSupport();
+  updateZoneCounts();
+}
+
+// --- 深色模式功能 ---
+
+function loadDarkModePreference() {
+  const saved = localStorage.getItem('promptFlowDarkMode');
+  if (saved === 'true') {
+    document.body.classList.add('dark-mode');
+    updateDarkModeIcon(true);
+  } else if (saved === null) {
+    // 如果没有保存的偏好，检查系统偏好
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      document.body.classList.add('dark-mode');
+      updateDarkModeIcon(true);
+    }
+  }
+}
+
+function toggleDarkMode() {
+  const isDark = document.body.classList.toggle('dark-mode');
+  localStorage.setItem('promptFlowDarkMode', isDark.toString());
+  updateDarkModeIcon(isDark);
+  showToast(isDark ? '已切换到深色模式' : '已切换到浅色模式');
+}
+
+function updateDarkModeIcon(isDark) {
+  const icon = document.getElementById('dark-mode-icon');
+  if (icon) {
+    icon.textContent = isDark ? 'light_mode' : 'dark_mode';
+  }
+}
+
+// 简单的防抖函数
+function debounce(fn, delay) {
+  let timer = null;
+  return function(...args) {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn.apply(this, args), delay);
+  };
+}
+
+// 更新区域计数
+function updateZoneCounts() {
+  const unusedCount = Store.getZone('unused').length;
+  const activeCount = Store.getSequentialItems().length + Store.getInjectedItems().length;
+  
+  const unusedCountEl = document.getElementById('unused-count');
+  const activeCountEl = document.getElementById('active-count');
+  
+  if (unusedCountEl) {
+    unusedCountEl.textContent = unusedCount;
+    unusedCountEl.classList.toggle('hidden', !mobileState.isMobile);
+  }
+  if (activeCountEl) {
+    activeCountEl.textContent = activeCount;
+    activeCountEl.classList.toggle('hidden', !mobileState.isMobile);
+  }
+}
+
+// 切换区域折叠状态
+function toggleZoneCollapse(zone) {
+  if (!mobileState.isMobile) return;
+  
+  mobileState.zoneCollapsed[zone] = !mobileState.zoneCollapsed[zone];
+  
+  const section = document.querySelector(`.${zone}-section`);
+  if (!section) return;
+  
+  const header = section.querySelector('.zone-header');
+  const content = section.querySelector('.zone-content');
+  
+  if (header) {
+    header.classList.toggle('collapsed', mobileState.zoneCollapsed[zone]);
+  }
+  if (content) {
+    content.classList.toggle('collapsed', mobileState.zoneCollapsed[zone]);
+  }
 }
 
 // 自动调整 textarea 高度（最大高度 400px）
@@ -1345,6 +1893,321 @@ function renderAll() {
   renderZone('unused', Store.getZone('unused'));
   renderZone('favorites', Store.getZone('favorites'));
   renderActiveZone();
+  updateZoneCounts();
+}
+
+// --- 移动端触摸拖拽支持 ---
+
+function setupTouchDragSupport() {
+  // 使用事件委托监听触摸事件
+  document.addEventListener('touchstart', handleTouchStart, { passive: false });
+  document.addEventListener('touchmove', handleTouchMove, { passive: false });
+  document.addEventListener('touchend', handleTouchEnd, { passive: false });
+  document.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+}
+
+function handleTouchStart(e) {
+  const dragHandle = e.target.closest('.drag-handle[draggable="true"]');
+  if (!dragHandle) return;
+  
+  const cardElement = dragHandle.closest('.compact-card') || dragHandle.closest('[draggable="true"]');
+  if (!cardElement) return;
+  
+  const itemId = cardElement.id || cardElement.dataset.itemId;
+  if (!itemId) return;
+  
+  const result = Store.getItemById(itemId);
+  if (!result) return;
+  
+  const touch = e.touches[0];
+  const rect = dragHandle.getBoundingClientRect();
+  
+  dragState.isTouchDrag = true;
+  dragState.touchStartX = touch.clientX;
+  dragState.touchStartY = touch.clientY;
+  dragState.touchMoved = false;
+  dragState.itemId = itemId;
+  dragState.itemData = { ...result.item };
+  dragState.originalElement = cardElement;
+  dragState.offsetX = touch.clientX - rect.left;
+  dragState.offsetY = touch.clientY - rect.top;
+  
+  // 判断源区域
+  if (cardElement.closest('#unused-zone')) {
+    dragState.sourceZone = 'unused';
+  } else if (cardElement.closest('#active-sequential-zone') || cardElement.closest('#active-injected-zone')) {
+    dragState.sourceZone = 'active';
+  } else if (cardElement.closest('#favorites-zone')) {
+    dragState.sourceZone = 'favorites';
+  }
+}
+
+function handleTouchMove(e) {
+  if (!dragState.isTouchDrag || !dragState.itemData) return;
+  
+  const touch = e.touches[0];
+  const moveX = Math.abs(touch.clientX - dragState.touchStartX);
+  const moveY = Math.abs(touch.clientY - dragState.touchStartY);
+  
+  // 开始拖拽阈值
+  if (!dragState.touchMoved && (moveX > 10 || moveY > 10)) {
+    dragState.touchMoved = true;
+    dragState.isDragging = true;
+    document.body.classList.add('is-dragging');
+    
+    // 创建幽灵元素
+    createCompactGhost(dragState.itemData, touch.clientX, touch.clientY, dragState.offsetX, dragState.offsetY);
+    
+    // 隐藏原始元素
+    if (dragState.originalElement) {
+      dragState.originalElement.style.opacity = '0.3';
+      dragState.originalElement.classList.add('touch-dragging');
+    }
+  }
+  
+  if (dragState.touchMoved) {
+    e.preventDefault(); // 阻止滚动
+    
+    // 更新幽灵位置
+    if (dragState.ghostElement) {
+      dragState.ghostElement.style.left = `${touch.clientX - dragState.offsetX}px`;
+      dragState.ghostElement.style.top = `${touch.clientY - dragState.offsetY}px`;
+    }
+    
+    // 检测拖放目标
+    const dropTarget = getDropTargetAtPoint(touch.clientX, touch.clientY);
+    if (dropTarget) {
+      // 高亮目标区域
+      document.querySelectorAll('.drop-zone-active').forEach(el => {
+        if (el !== dropTarget.zone) el.classList.remove('drop-zone-active');
+      });
+      dropTarget.zone.classList.add('drop-zone-active');
+      
+      // 更新预览
+      updateDropPreview(dropTarget.zone, touch.clientY);
+    }
+  }
+}
+
+function handleTouchEnd(e) {
+  if (!dragState.isTouchDrag) return;
+  
+  if (dragState.touchMoved && dragState.isDragging) {
+    // 获取最后的触摸位置
+    const touch = e.changedTouches[0];
+    const dropTarget = getDropTargetAtPoint(touch.clientX, touch.clientY);
+    
+    if (dropTarget) {
+      // 执行放置操作
+      executeTouchDrop(dropTarget.zoneId, dropTarget.zone, touch.clientY);
+    }
+  }
+  
+  // 清理状态
+  cleanupTouchDrag();
+}
+
+function cleanupTouchDrag() {
+  if (dragState.originalElement) {
+    dragState.originalElement.style.opacity = '';
+    dragState.originalElement.classList.remove('touch-dragging');
+  }
+  
+  cleanupDrag();
+  
+  dragState.isTouchDrag = false;
+  dragState.touchStartX = 0;
+  dragState.touchStartY = 0;
+  dragState.touchMoved = false;
+}
+
+function getDropTargetAtPoint(x, y) {
+  // 临时隐藏幽灵元素以便检测下方元素
+  if (dragState.ghostElement) {
+    dragState.ghostElement.style.display = 'none';
+  }
+  
+  const element = document.elementFromPoint(x, y);
+  
+  if (dragState.ghostElement) {
+    dragState.ghostElement.style.display = '';
+  }
+  
+  if (!element) return null;
+  
+  // 检查各个放置区域
+  const zones = [
+    { id: 'unused', selector: '#unused-zone' },
+    { id: 'active-sequential', selector: '#active-sequential-zone' },
+    { id: 'active-injected', selector: '#active-injected-zone' },
+    { id: 'favorites', selector: '#favorites-zone' },
+  ];
+  
+  for (const { id, selector } of zones) {
+    const zone = document.querySelector(selector);
+    if (zone && (zone.contains(element) || zone === element)) {
+      return { zoneId: id, zone };
+    }
+  }
+  
+  return null;
+}
+
+function executeTouchDrop(targetZoneId, targetEl, y) {
+  if (!dragState.isDragging || !dragState.itemData) return;
+  
+  // 验证源条目存在
+  const result = Store.getItemById(dragState.itemId);
+  if (!result) return;
+  
+  const item = result.item;
+  
+  // 检查各种限制
+  if (item.system_prompt === true && dragState.sourceZone === 'active') {
+    const isStayingInActive = targetZoneId === 'active-sequential' || targetZoneId === 'active-injected';
+    if (!isStayingInActive) {
+      showToast('系统提示词无法移出主面板');
+      return;
+    }
+  }
+  
+  if (item.marker === true && dragState.sourceZone === 'active' && targetZoneId === 'unused') {
+    showToast('占位符无法移到未使用栏');
+    return;
+  }
+  
+  const fixedSequentialIdentifiers = ['chatHistory', 'dialogueExamples'];
+  if (fixedSequentialIdentifiers.includes(item.identifier) && targetZoneId === 'active-injected') {
+    showToast('此占位符必须保持顺序类型');
+    return;
+  }
+  
+  // 判断是复制还是移动
+  const isCopy = dragState.sourceZone === 'favorites';
+  
+  // 确定新类型
+  let newType = null;
+  if (targetZoneId === 'active-injected') {
+    newType = 'injected';
+  } else if (targetZoneId === 'active-sequential') {
+    newType = 'sequential';
+  }
+  
+  // 计算目标位置索引
+  let targetIndex = -1;
+  const isInjectedTarget = targetZoneId === 'active-injected';
+  
+  if (!isInjectedTarget) {
+    const afterElement = getDragAfterElement(targetEl, y);
+    if (afterElement) {
+      const targetZone = Store.getZone(targetZoneId);
+      if (Array.isArray(targetZone)) {
+        targetIndex = targetZone.findIndex(i => i.id === afterElement.id);
+      }
+    }
+  }
+  
+  // 使用 Store API 移动/复制条目
+  Store.moveItem(dragState.itemId, targetZoneId, targetIndex, {
+    copy: isCopy,
+    newType: newType,
+  });
+  
+  renderAll();
+  showToast('项目已更新');
+}
+
+// --- 移动端便捷操作函数 ---
+
+function moveItemToUnused(itemId) {
+  const result = Store.getItemById(itemId);
+  if (!result) return;
+  
+  const item = result.item;
+  
+  // 检查限制
+  if (item.system_prompt === true) {
+    showToast('系统提示词无法移出主面板');
+    return;
+  }
+  if (item.marker === true) {
+    showToast('占位符无法移到未使用栏');
+    return;
+  }
+  
+  Store.moveItem(itemId, 'unused', -1, { copy: false });
+  renderAll();
+  showToast('已移到未使用');
+}
+
+function moveItemToActive(itemId) {
+  Store.moveItem(itemId, 'active-sequential', -1, { copy: false, newType: 'sequential' });
+  renderAll();
+  showToast('已移到激活的提示词');
+}
+
+function moveItemUp(itemId) {
+  const result = Store.getItemById(itemId);
+  if (!result) return;
+  
+  const { zone, item } = result;
+  
+  // 获取当前列表和索引
+  let list;
+  if (zone === 'active') {
+    list = item.type === 'sequential' ? Store.getSequentialItems() : Store.getInjectedItems();
+  } else {
+    list = Store.getZone(zone);
+  }
+  
+  if (!Array.isArray(list)) return;
+  
+  const currentIndex = list.findIndex(i => i.id === itemId);
+  if (currentIndex <= 0) {
+    showToast('已经是第一个了');
+    return;
+  }
+  
+  // 获取实际的目标区域
+  const actualZone = zone === 'active'
+    ? (item.type === 'sequential' ? 'active-sequential' : 'active-injected')
+    : zone;
+  
+  Store.moveItem(itemId, actualZone, currentIndex - 1, { copy: false });
+  renderAll();
+  showToast('已上移');
+}
+
+function moveItemDown(itemId) {
+  const result = Store.getItemById(itemId);
+  if (!result) return;
+  
+  const { zone, item } = result;
+  
+  // 获取当前列表和索引
+  let list;
+  if (zone === 'active') {
+    list = item.type === 'sequential' ? Store.getSequentialItems() : Store.getInjectedItems();
+  } else {
+    list = Store.getZone(zone);
+  }
+  
+  if (!Array.isArray(list)) return;
+  
+  const currentIndex = list.findIndex(i => i.id === itemId);
+  if (currentIndex >= list.length - 1) {
+    showToast('已经是最后一个了');
+    return;
+  }
+  
+  // 获取实际的目标区域
+  const actualZone = zone === 'active'
+    ? (item.type === 'sequential' ? 'active-sequential' : 'active-injected')
+    : zone;
+  
+  Store.moveItem(itemId, actualZone, currentIndex + 2, { copy: false });
+  renderAll();
+  showToast('已下移');
 }
 
 // --- Render Helpers ---
@@ -1474,6 +2337,29 @@ function createItemHTML(item, zone, isCompact = false) {
                     `
                         : ''
                     }
+                    
+                    <!-- 移动端便捷操作按钮 -->
+                    <div class="mobile-actions">
+                        <button onclick="event.stopPropagation(); moveItemUp('${item.id}')"
+                                class="mobile-action-btn move-up">
+                            <span class="material-symbols-outlined">arrow_upward</span>
+                            上移
+                        </button>
+                        <button onclick="event.stopPropagation(); moveItemDown('${item.id}')"
+                                class="mobile-action-btn move-down">
+                            <span class="material-symbols-outlined">arrow_downward</span>
+                            下移
+                        </button>
+                        ${
+                          zone === 'unused'
+                            ? `<button onclick="event.stopPropagation(); moveItemToActive('${item.id}')"
+                                    class="mobile-action-btn move-to-active">
+                                <span class="material-symbols-outlined">play_circle</span>
+                                移到激活
+                            </button>`
+                            : ''
+                        }
+                    </div>
                 </div>
             `;
 }
@@ -1523,16 +2409,27 @@ function createCompactItemHTML(item) {
                                 } w-12">${item.role}</span>
                             </div>
                             <!-- 内容区域：点击展开/收起 -->
-                            <div class="content-area flex-1 flex items-center gap-2 px-2 h-full cursor-pointer overflow-hidden"
+                            <div class="content-area flex-1 flex flex-col justify-center gap-0.5 px-2 h-full cursor-pointer overflow-hidden"
                                  onclick="toggleCardExpand('${item.id}')">
-                                <div class="text-sm ${
-                                  isEnabled ? 'text-slate-600' : 'text-slate-400'
-                                } truncate flex-1 font-mono">${displayContent}</div>
-                                ${
+                                <div class="flex items-center gap-2">
+                                    <div class="text-sm font-medium ${
+                                      isEnabled ? 'text-slate-700' : 'text-slate-400'
+                                    } truncate">${escapeHtml(item.title) || '未命名'}</div>
+                                    ${
+                                      isMarker
+                                        ? '<span class="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded shrink-0">占位</span>'
+                                        : ''
+                                    }
+                                </div>
+                                <div class="text-xs ${
+                                  isEnabled ? 'text-slate-400' : 'text-slate-300'
+                                } truncate font-mono">${
                                   isMarker
-                                    ? '<span class="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded shrink-0">占位</span>'
-                                    : ''
-                                }
+                                    ? `<span class="italic text-amber-500">[${escapeHtml(item.title)}]</span>`
+                                    : item.content
+                                    ? escapeHtml(item.content.substring(0, 60)) + (item.content.length > 60 ? '...' : '')
+                                    : '<span class="italic">无内容</span>'
+                                }</div>
                             </div>
                             <!-- 开关按钮 -->
                             <button onclick="toggleItemEnabled('${item.id}')" 
@@ -1635,13 +2532,36 @@ function createCompactItemHTML(item) {
                                 )}</span>
                                 ${
                                   !isMarker
-                                    ? `<button onclick="saveCardChanges('${item.id}')" 
+                                    ? `<button onclick="saveCardChanges('${item.id}')"
                                         class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-3 py-1 rounded transition-colors">
                                     保存
                                 </button>`
                                     : ''
                                 }
                             </div>
+                        </div>
+                        
+                        <!-- 移动端便捷操作按钮 -->
+                        <div class="mobile-actions">
+                            <button onclick="event.stopPropagation(); moveItemUp('${item.id}')"
+                                    class="mobile-action-btn move-up">
+                                <span class="material-symbols-outlined">arrow_upward</span>
+                                上移
+                            </button>
+                            <button onclick="event.stopPropagation(); moveItemDown('${item.id}')"
+                                    class="mobile-action-btn move-down">
+                                <span class="material-symbols-outlined">arrow_downward</span>
+                                下移
+                            </button>
+                            ${
+                              !isSystemPrompt && !isMarker
+                                ? `<button onclick="event.stopPropagation(); moveItemToUnused('${item.id}')"
+                                        class="mobile-action-btn move-to-unused">
+                                    <span class="material-symbols-outlined">inbox</span>
+                                    移到未使用
+                                </button>`
+                                : ''
+                            }
                         </div>
                     </div>
                 </div>
