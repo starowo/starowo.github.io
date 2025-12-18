@@ -59,11 +59,12 @@ let loadSettingsToMacroNestForm = null;
 
     const regexForRegex = /regex\/[^/]+\.js/;
     if (regexForRegex.test(stack) && stack.includes('getRegexScripts')) {
-      if (result == [0, 1, 2]) {
+      console.log('getRegexScripts called, result:', result);
+      if (result.toString() === [0,1,2].toString()) {
         if (window.versionNumber >= 11400) {
           return [1, 0, 2];
         }
-        return [0, 2, 1];
+        return [2, 0, 1];
       }
     }
 
