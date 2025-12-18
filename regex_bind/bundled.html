@@ -3638,6 +3638,10 @@ setupIframeMode();
     // marker 也可以是注入类型（除了 chatHistory 和 dialogueExamples）
     const isInjected = stPrompt.injection_position === 1;
 
+    if (stPrompt.role === 'assistant') {
+      stPrompt.role = 'model';
+    }
+
     return {
       // 使用 identifier 作为 id，确保唯一性
       id: stPrompt.identifier,
@@ -3669,6 +3673,9 @@ setupIframeMode();
    * @returns {Object} ST 格式的提示词
    */
   function convertEditorItemToSTPrompt(editorItem) {
+    if (editorItem.role === 'model') {
+      editorItem.role = 'assistant';
+    }
     const stPrompt = {
       identifier: editorItem.identifier || editorItem.id,
       name: editorItem.title,
