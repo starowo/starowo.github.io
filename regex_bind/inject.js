@@ -35,6 +35,12 @@ let SGlobalSettings = {
 
 const ctx = SillyTavern.getContext();
 
+for (const prompt of ctx.chatCompletionSettings.prompts) {
+  if (prompt.role === 'model') {
+    prompt.role = 'assistant';
+  }
+}
+
 const settingsDom = $(`
   <div id="s_preset_settings">
   </div>
