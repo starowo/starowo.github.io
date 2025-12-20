@@ -3832,6 +3832,9 @@ setupIframeMode();
     // 合并编辑器中的修改
     const allEditorItems = [...state.active, ...state.unused];
 
+    // 移除不存在的prompt
+    settings.prompts = settings.prompts.filter(p => allEditorItems.some(item => item.identifier === p.identifier));
+
     allEditorItems.forEach(editorItem => {
       const identifier = editorItem.identifier || editorItem.id;
       const existingPrompt = existingPromptsMap.get(identifier);
