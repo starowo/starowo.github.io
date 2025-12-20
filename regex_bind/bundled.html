@@ -3833,7 +3833,7 @@ setupIframeMode();
     const allEditorItems = [...state.active, ...state.unused];
 
     // 移除不存在的prompt
-    settings.prompts = settings.prompts.filter(p => allEditorItems.some(item => item.identifier === p.identifier));
+    existingPrompts = existingPrompts.filter(p => allEditorItems.some(item => item.identifier === p.identifier));
 
     allEditorItems.forEach(editorItem => {
       const identifier = editorItem.identifier || editorItem.id;
