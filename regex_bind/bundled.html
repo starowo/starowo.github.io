@@ -3825,7 +3825,7 @@ setupIframeMode();
     const state = Store.getState();
 
     // 获取当前的 prompts 数组
-    const existingPrompts = settings.prompts || [];
+    let existingPrompts = settings.prompts || [];
     const existingPromptsMap = new Map();
     existingPrompts.forEach(p => existingPromptsMap.set(p.identifier, p));
 
