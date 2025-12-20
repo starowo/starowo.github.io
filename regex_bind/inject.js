@@ -712,6 +712,7 @@ const ChatSquash = () => {
                     <option value="system">系统</option>
                     <option value="user">用户</option>
                     <option value="assistant">模型</option>
+                    <option value="follow">上一个角色</option>
                 </select>
             </div>
 
@@ -901,6 +902,23 @@ const ChatSquash = () => {
     ctx.saveSettingsDebounced();
   }
 
+  const listenerList = ctx.eventSource.events[ctx.eventTypes.CHAT_COMPLETION_SETTINGS_READY];
+  if (listenerList) {
+    for (let i = 0; i < listenerList.length; i++) {
+      if (
+        listenerList[i].toString().includes('merge config >>>>>>>>>>>>> Final Message Structure <<<<<<<<<<<<<<<<<')
+      ) {
+        const originalListener = listenerList[i];
+        listenerList[i] = data1 => {
+          if (!SPresetSettings.ChatSquash.enabled) {
+            return originalListener(data1);
+          }
+          return;
+        };
+      }
+    }
+  }
+
   const originalOn = ctx.eventSource.on;
   ctx.eventSource.on = function (event, listener) {
     // 都他妈别跟我抢
@@ -1006,6 +1024,10 @@ const ChatSquash = () => {
 
   function squashPrompts(prompts) {
     const settings = SPresetSettings.ChatSquash;
+    let squashRole = settings.role;
+    if (settings.role === 'follow') {
+      squashRole = prompts[0].role;
+    }
     const newPrompts = [...prompts];
     prompts.length = 0;
     let lastRole = '';
@@ -1052,9 +1074,12 @@ const ChatSquash = () => {
               break;
           }
           prompts.push({
-            role: settings.role,
+            role: squashRole,
             content: postProcess(mergedContent),
           });
+        }
+        if (settings.role === 'follow') {
+          squashRole = prompt.role;
         }
         mergedContent = '';
         lastRole = '';
@@ -1103,7 +1128,7 @@ const ChatSquash = () => {
           break;
       }
       prompts.push({
-        role: settings.role,
+        role: squashRole,
         content: postProcess(mergedContent),
       });
     }
