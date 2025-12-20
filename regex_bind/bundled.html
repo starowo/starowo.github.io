@@ -3843,7 +3843,11 @@ setupIframeMode();
           existingPrompt.content = editorItem.content;
         }
         existingPrompt.name = editorItem.title;
-        existingPrompt.role = editorItem.role;
+        if (editorItem.role === 'model') {
+          existingPrompt.role = 'assistant';
+        } else {
+          existingPrompt.role = editorItem.role;
+        }
 
         // 如果是注入类型，更新注入参数
         if (editorItem.type === 'injected') {
