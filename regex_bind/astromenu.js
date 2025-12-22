@@ -1478,7 +1478,10 @@ $(() => {
 
   function saveExtensionSettings() {
     ST.saveSettingsDebounced();
-    if (window.SPresetTempData && window.SPresetTempData.Astro) {
+    if (window.SPresetTempData) {
+      if (!window.SPresetTempData.Astro) {
+        window.SPresetTempData.Astro = {};
+      }
       Object.entries(ST.extensionSettings.Astro).forEach(([key, value]) => {
         window.SPresetTempData.Astro[key] = value;
       });
