@@ -7,9 +7,9 @@ $(() => {
 
   // --------------------------------------------------------------
 
-  // 死兆星主题样式
-  const deathStarStyles = `
-    <style id="death-star-menu-styles">
+  // 主题样式定义
+  const themes = {
+    deathStar: `
       .death-star-button {
         position: fixed;
         top: 20px;
@@ -795,8 +795,1186 @@ $(() => {
           transform: translate(-50%, -50%);
         }
       }
-    </style>
-  `;
+    `,
+    deepSea: `
+      .death-star-button {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 30% 30%, #1e293b, #0f172a);
+        border: 2px solid #06b6d4;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s ease;
+        box-shadow:
+          0 0 20px rgba(6, 182, 212, 0.3),
+          inset 0 0 10px rgba(0, 0, 0, 0.8),
+          inset 2px 2px 4px rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        user-select: none;
+      }
+
+      .death-star-button.dragging {
+        transition: none;
+        cursor: grabbing;
+        transform: scale(1.05);
+        box-shadow:
+          0 0 35px rgba(6, 182, 212, 0.6),
+          inset 0 0 20px rgba(0, 0, 0, 0.9),
+          inset 2px 2px 8px rgba(255, 255, 255, 0.2);
+      }
+
+      .death-star-button::before {
+        content: '';
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        background: radial-gradient(circle, #22d3ee, #0e7490);
+        border-radius: 50%;
+        top: 12px;
+        right: 12px;
+        box-shadow:
+          0 0 8px #22d3ee,
+          inset 0 0 4px rgba(0, 0, 0, 0.5);
+        animation: deathStarPulse 2s infinite;
+      }
+
+      .death-star-button::after {
+        content: '';
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        background: conic-gradient(
+          from 0deg,
+          transparent 0deg,
+          rgba(6, 182, 212, 0.1) 45deg,
+          transparent 90deg,
+          rgba(6, 182, 212, 0.1) 135deg,
+          transparent 180deg,
+          rgba(6, 182, 212, 0.1) 225deg,
+          transparent 270deg,
+          rgba(6, 182, 212, 0.1) 315deg,
+          transparent 360deg
+        );
+        animation: deathStarRotate 8s linear infinite;
+      }
+
+      .death-star-button:hover {
+        transform: scale(1.1);
+        box-shadow:
+          0 0 30px rgba(6, 182, 212, 0.5),
+          inset 0 0 15px rgba(0, 0, 0, 0.9),
+          inset 2px 2px 6px rgba(255, 255, 255, 0.15);
+      }
+
+      .death-star-icon {
+        color: #22d3ee;
+        font-size: 20px;
+        text-shadow: 0 0 10px #22d3ee;
+        z-index: 1;
+        position: relative;
+      }
+
+      .death-star-menu {
+        position: fixed;
+        width: 300px;
+        min-height: 200px;
+        background: linear-gradient(135deg,
+          rgba(15, 23, 42, 0.95) 0%,
+          rgba(30, 41, 59, 0.95) 50%,
+          rgba(15, 23, 42, 0.95) 100%);
+        border: 1px solid #06b6d4;
+        border-radius: 12px;
+        box-shadow:
+          0 20px 40px rgba(0, 0, 0, 0.8),
+          inset 0 1px 2px rgba(255, 255, 255, 0.1),
+          0 0 30px rgba(6, 182, 212, 0.2);
+        backdrop-filter: blur(15px);
+        -webkit-backdrop-filter: blur(15px);
+        z-index: 9998;
+        opacity: 0;
+        transform: translateY(-20px);
+        transition: all 0.3s ease;
+        pointer-events: none;
+        overflow: hidden;
+      }
+
+      .death-star-menu.show {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: all;
+      }
+
+      .death-star-menu::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: linear-gradient(90deg,
+          transparent 0%,
+          #06b6d4 50%,
+          transparent 100%);
+        animation: deathStarScan 3s ease-in-out infinite;
+      }
+
+      .death-star-menu-header {
+        padding: 15px 20px;
+        border-bottom: 1px solid #1e293b;
+        background: linear-gradient(90deg,
+          rgba(6, 182, 212, 0.1) 0%,
+          rgba(6, 182, 212, 0.05) 50%,
+          rgba(6, 182, 212, 0.1) 100%);
+      }
+
+      .death-star-menu-title {
+        color: #22d3ee;
+        font-size: 16px;
+        font-weight: bold;
+        text-shadow: 0 0 10px rgba(34, 211, 238, 0.5);
+        margin: 0;
+        font-family: 'Courier New', monospace;
+        letter-spacing: 1px;
+      }
+
+      .death-star-menu-content {
+        padding: 20px;
+      }
+
+      .death-star-menu-item {
+        display: flex;
+        align-items: center;
+        padding: 12px 15px;
+        margin: 8px 0;
+        background: rgba(30, 41, 59, 0.3);
+        border: 1px solid #1e293b;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        color: #94a3b8;
+        font-family: 'Microsoft YaHei', Arial, sans-serif;
+      }
+
+      .death-star-menu-item:hover {
+        background: rgba(6, 182, 212, 0.1);
+        border-color: #06b6d4;
+        color: #fff;
+        box-shadow:
+          0 0 15px rgba(6, 182, 212, 0.3),
+          inset 0 0 10px rgba(6, 182, 212, 0.1);
+        transform: translateX(5px);
+      }
+
+      .death-star-menu-item-icon {
+        margin-right: 12px;
+        font-size: 18px;
+        color: #22d3ee;
+        text-shadow: 0 0 8px rgba(34, 211, 238, 0.5);
+        min-width: 20px;
+      }
+
+      .death-star-menu-item-text {
+        flex: 1;
+        font-size: 14px;
+      }
+
+      .death-star-menu-item-arrow {
+        margin-left: 10px;
+        font-size: 12px;
+        color: #64748b;
+        transition: all 0.3s ease;
+      }
+
+      .death-star-menu-item:hover .death-star-menu-item-arrow {
+        color: #22d3ee;
+        transform: translateX(3px);
+      }
+
+      @keyframes deathStarPulse {
+        0%, 100% {
+          opacity: 0.8;
+          box-shadow: 0 0 8px #22d3ee, inset 0 0 4px rgba(0, 0, 0, 0.5);
+        }
+        50% {
+          opacity: 1;
+          box-shadow: 0 0 15px #22d3ee, inset 0 0 6px rgba(0, 0, 0, 0.7);
+        }
+      }
+
+      @keyframes deathStarRotate {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+
+      @keyframes deathStarScan {
+        0%, 100% { transform: translateX(-100%); }
+        50% { transform: translateX(400px); }
+      }
+
+      .death-star-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.3);
+        z-index: 9997;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        pointer-events: none;
+      }
+
+      .death-star-overlay.show {
+        opacity: 1;
+        pointer-events: all;
+      }
+
+      .death-star-submenu {
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s ease, padding 0.3s ease;
+        background: rgba(15, 23, 42, 0.8);
+        border-radius: 0 0 8px 8px;
+        margin-top: 8px;
+        border: 1px solid #1e293b;
+        border-top: none;
+      }
+
+      .death-star-submenu.expanded {
+        max-height: 300px;
+        padding: 15px;
+        overflow-y: auto;
+        overflow-x: hidden;
+      }
+
+      .death-star-submenu::-webkit-scrollbar {
+        width: 6px;
+      }
+
+      .death-star-submenu::-webkit-scrollbar-track {
+        background: rgba(30, 41, 59, 0.3);
+        border-radius: 3px;
+      }
+
+      .death-star-submenu::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, #06b6d4, #0891b2);
+        border-radius: 3px;
+        box-shadow: 0 0 3px rgba(6, 182, 212, 0.3);
+      }
+
+      .death-star-submenu::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(180deg, #22d3ee, #06b6d4);
+        box-shadow: 0 0 5px rgba(6, 182, 212, 0.5);
+      }
+
+      .death-star-submenu {
+        scrollbar-width: thin;
+        scrollbar-color: #06b6d4 rgba(30, 41, 59, 0.3);
+      }
+
+      .death-star-submenu-title {
+        color: #22d3ee;
+        font-size: 14px;
+        font-weight: bold;
+        margin: 15px 0 8px 0;
+        padding-bottom: 5px;
+        border-bottom: 1px solid #1e293b;
+        font-family: 'Microsoft YaHei', Arial, sans-serif;
+        text-shadow: 0 0 5px rgba(34, 211, 238, 0.3);
+      }
+
+      .death-star-submenu-title:first-child {
+        margin-top: 0;
+      }
+
+      .death-star-submenu-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 12px;
+        margin: 5px 0;
+        background: rgba(30, 41, 59, 0.2);
+        border: 1px solid #1e293b;
+        border-radius: 6px;
+        color: #94a3b8;
+        font-size: 13px;
+        transition: all 0.2s ease;
+        font-family: 'Microsoft YaHei', Arial, sans-serif;
+      }
+
+      .death-star-submenu-item:hover {
+        background: rgba(6, 182, 212, 0.05);
+        border-color: #06b6d4;
+        color: #fff;
+      }
+      
+      .death-star-submenu-item.has-option-group {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 12px;
+      }
+
+      .death-star-submenu-item.has-option-group .death-star-submenu-item-label {
+        margin-bottom: 8px;
+        width: 100%;
+      }
+
+      .death-star-submenu-item-label {
+        flex: 1;
+        display: flex;
+        align-items: center;
+      }
+
+      .death-star-submenu-item-icon {
+        margin-right: 8px;
+        font-size: 14px;
+        color: #22d3ee;
+        min-width: 16px;
+      }
+
+      .death-star-toggle {
+        position: relative;
+        width: 40px;
+        height: 20px;
+        background: #1e293b;
+        border-radius: 10px;
+        border: 1px solid #334155;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+
+      .death-star-toggle.active {
+        background: linear-gradient(45deg, #06b6d4, #0891b2);
+        border-color: #06b6d4;
+        box-shadow: 0 0 10px rgba(6, 182, 212, 0.3);
+      }
+
+      .death-star-toggle::before {
+        content: '';
+        position: absolute;
+        top: 1px;
+        left: 1px;
+        width: 16px;
+        height: 16px;
+        background: #fff;
+        border-radius: 50%;
+        transition: all 0.3s ease;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+      }
+
+      .death-star-toggle.active::before {
+        transform: translateX(20px);
+        background: #fff;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+      }
+
+      .death-star-input {
+        background: rgba(30, 41, 59, 0.5);
+        border: 1px solid #334155;
+        border-radius: 4px;
+        color: #fff;
+        padding: 4px 8px;
+        font-size: 12px;
+        width: 100px;
+        font-family: 'Microsoft YaHei', Arial, sans-serif;
+        transition: all 0.2s ease;
+        text-align: center;
+      }
+
+      .death-star-input:focus {
+        border-color: #06b6d4;
+        background: rgba(6, 182, 212, 0.1);
+        outline: none;
+        box-shadow: 0 0 5px rgba(6, 182, 212, 0.3);
+      }
+
+      .death-star-info-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        border: 1px solid #64748b;
+        color: #94a3b8;
+        font-size: 10px;
+        margin-left: 8px;
+        cursor: help;
+        transition: all 0.2s ease;
+      }
+
+      .death-star-info-icon:hover {
+        color: #22d3ee;
+        border-color: #22d3ee;
+        transform: scale(1.1);
+      }
+    `,
+    blackWhite: `
+      .death-star-button {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background: #000;
+        border: 2px solid #fff;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s ease;
+        box-shadow: none;
+        user-select: none;
+      }
+
+      .death-star-button:hover {
+        background: #222;
+        transform: scale(1.1);
+      }
+
+      .death-star-button::before {
+        content: '';
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        background: #fff;
+        border-radius: 50%;
+        top: 12px;
+        right: 12px;
+      }
+
+      .death-star-button::after {
+        display: none;
+      }
+
+      .death-star-icon {
+        color: #fff;
+        font-size: 20px;
+        z-index: 1;
+      }
+
+      .death-star-menu {
+        position: fixed;
+        width: 300px;
+        min-height: 200px;
+        background: #000;
+        border: 2px solid #fff;
+        border-radius: 0;
+        z-index: 9998;
+        opacity: 0;
+        transform: translateY(-20px);
+        transition: all 0.2s ease;
+        pointer-events: none;
+        overflow: hidden;
+      }
+
+      .death-star-menu.show {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: all;
+      }
+
+      .death-star-menu-header {
+        padding: 15px 20px;
+        border-bottom: 2px solid #fff;
+        background: #000;
+      }
+
+      .death-star-menu-title {
+        color: #fff;
+        font-size: 16px;
+        font-weight: bold;
+        margin: 0;
+        font-family: 'Courier New', monospace;
+      }
+
+      .death-star-menu-content {
+        padding: 20px;
+      }
+
+      .death-star-menu-item {
+        display: flex;
+        align-items: center;
+        padding: 12px 15px;
+        margin: 8px 0;
+        background: #000;
+        border: 1px solid #fff;
+        border-radius: 0;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        color: #fff;
+        font-family: 'Microsoft YaHei', Arial, sans-serif;
+      }
+
+      .death-star-menu-item:hover {
+        background: #fff;
+        color: #000;
+      }
+      
+      .death-star-menu-item:hover .death-star-menu-item-icon {
+        color: #000;
+        text-shadow: none;
+      }
+      
+      .death-star-menu-item:hover .death-star-menu-item-arrow {
+        color: #000;
+      }
+
+      .death-star-menu-item-icon {
+        margin-right: 12px;
+        font-size: 18px;
+        color: #fff;
+        min-width: 20px;
+      }
+
+      .death-star-menu-item-text {
+        flex: 1;
+        font-size: 14px;
+      }
+
+      .death-star-menu-item-arrow {
+        margin-left: 10px;
+        font-size: 12px;
+        color: #fff;
+        transition: all 0.2s ease;
+      }
+
+      .death-star-submenu {
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s ease, padding 0.3s ease;
+        background: #000;
+        border: 1px solid #fff;
+        border-top: none;
+        border-radius: 0;
+        margin-top: 8px;
+      }
+
+      .death-star-submenu.expanded {
+        max-height: 300px;
+        padding: 15px;
+        overflow-y: auto;
+      }
+      
+      .death-star-submenu::-webkit-scrollbar {
+        width: 6px;
+      }
+      
+      .death-star-submenu::-webkit-scrollbar-thumb {
+        background: #fff;
+      }
+      
+      .death-star-submenu::-webkit-scrollbar-track {
+        background: #333;
+      }
+
+      .death-star-submenu-title {
+        color: #fff;
+        font-size: 14px;
+        font-weight: bold;
+        margin: 15px 0 8px 0;
+        padding-bottom: 5px;
+        border-bottom: 1px solid #fff;
+        font-family: 'Microsoft YaHei', Arial, sans-serif;
+      }
+
+      .death-star-submenu-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 12px;
+        margin: 5px 0;
+        background: #000;
+        border: 1px solid #fff;
+        border-radius: 0;
+        color: #fff;
+        font-size: 13px;
+        transition: all 0.2s ease;
+      }
+
+      .death-star-submenu-item:hover {
+        background: #fff;
+        color: #000;
+      }
+      
+      .death-star-submenu-item:hover .death-star-submenu-item-icon {
+        color: #000;
+      }
+
+      .death-star-submenu-item.has-option-group {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 12px;
+      }
+      
+      .death-star-submenu-item.has-option-group .death-star-submenu-item-label {
+        width: 100%;
+        margin-bottom: 8px;
+      }
+
+      .death-star-submenu-item-label {
+        flex: 1;
+        display: flex;
+        align-items: center;
+      }
+
+      .death-star-submenu-item-icon {
+        margin-right: 8px;
+        font-size: 14px;
+        color: #fff;
+        min-width: 16px;
+      }
+
+      .death-star-toggle {
+        position: relative;
+        width: 40px;
+        height: 20px;
+        background: #000;
+        border-radius: 10px;
+        border: 1px solid #fff;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .death-star-toggle.active {
+        background: #fff;
+        border-color: #fff;
+      }
+
+      .death-star-toggle::before {
+        content: '';
+        position: absolute;
+        top: 1px;
+        left: 1px;
+        width: 16px;
+        height: 16px;
+        background: #fff;
+        border-radius: 50%;
+        transition: all 0.2s ease;
+      }
+      
+      .death-star-toggle:not(.active)::before {
+         background: #fff;
+      }
+
+      .death-star-toggle.active::before {
+        transform: translateX(20px);
+        background: #000;
+      }
+
+      .death-star-input {
+        background: #000;
+        border: 1px solid #fff;
+        border-radius: 0;
+        color: #fff;
+        padding: 4px 8px;
+        font-size: 12px;
+        width: 100px;
+        text-align: center;
+      }
+
+      .death-star-input:focus {
+        background: #fff;
+        color: #000;
+        outline: none;
+      }
+
+      .death-star-info-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        border: 1px solid #fff;
+        color: #fff;
+        font-size: 10px;
+        margin-left: 8px;
+        cursor: help;
+      }
+
+      .death-star-info-icon:hover {
+        background: #fff;
+        color: #000;
+      }
+      
+      .death-star-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.1);
+        z-index: 9997;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        pointer-events: none;
+      }
+
+      .death-star-overlay.show {
+        opacity: 1;
+        pointer-events: all;
+      }
+    `,
+    pixel: `
+      /* 像素风格 */
+      .death-star-button {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        width: 50px;
+        height: 50px;
+        background: #2b0f54;
+        border: 4px solid #ab20fd;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 4px 4px 0 #000;
+        image-rendering: pixelated;
+        user-select: none;
+      }
+      
+      .death-star-button:active {
+        transform: translate(2px, 2px);
+        box-shadow: 2px 2px 0 #000;
+      }
+      
+      .death-star-button::before {
+        content: '';
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        background: #ab20fd;
+        top: 8px;
+        right: 8px;
+      }
+      
+      .death-star-icon {
+        color: #ab20fd;
+        font-size: 24px;
+        font-family: monospace;
+      }
+      
+      .death-star-menu {
+        position: fixed;
+        width: 300px;
+        min-height: 200px;
+        background: #1a0b2e;
+        border: 4px solid #ab20fd;
+        box-shadow: 8px 8px 0 #000;
+        z-index: 9998;
+        opacity: 0;
+        transform: translateY(-20px);
+        transition: none; /* 像素风不需要平滑过渡 */
+        display: none;
+      }
+      
+      .death-star-menu.show {
+        opacity: 1;
+        transform: translateY(0);
+        display: block;
+      }
+      
+      .death-star-menu-header {
+        padding: 15px;
+        background: #2b0f54;
+        border-bottom: 4px solid #ab20fd;
+      }
+      
+      .death-star-menu-title {
+        color: #ff00ff;
+        font-family: 'Courier New', monospace;
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+      }
+      
+      .death-star-menu-content {
+        padding: 15px;
+      }
+      
+      .death-star-menu-item {
+        display: flex;
+        align-items: center;
+        padding: 10px;
+        margin: 10px 0;
+        background: #2b0f54;
+        border: 2px solid #5d2c8d;
+        cursor: pointer;
+        color: #d7b4f3;
+        font-family: 'Courier New', monospace;
+      }
+      
+      .death-star-menu-item:hover {
+        background: #ab20fd;
+        color: #fff;
+        border-color: #fff;
+      }
+      
+      .death-star-menu-item-icon {
+        margin-right: 10px;
+        color: #ff00ff;
+      }
+      
+      .death-star-menu-item:hover .death-star-menu-item-icon {
+        color: #fff;
+      }
+      
+      .death-star-submenu {
+        max-height: 0;
+        overflow: hidden;
+        background: #0f0518;
+        border: 2px solid #5d2c8d;
+        margin-top: 5px;
+        display: none;
+      }
+      
+      .death-star-submenu.expanded {
+        max-height: 300px;
+        padding: 15px;
+        display: block;
+        overflow-y: auto;
+      }
+      
+      .death-star-submenu-title {
+        color: #00ffff;
+        font-family: 'Courier New', monospace;
+        border-bottom: 2px dashed #5d2c8d;
+        padding-bottom: 5px;
+        margin-bottom: 10px;
+      }
+      
+      .death-star-submenu-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px;
+        margin: 5px 0;
+        background: #2b0f54;
+        border: 2px solid #5d2c8d;
+        color: #d7b4f3;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+      }
+      
+      .death-star-submenu-item:hover {
+        border-color: #00ffff;
+        color: #00ffff;
+      }
+      
+      .death-star-toggle {
+        width: 40px;
+        height: 20px;
+        background: #1a0b2e;
+        border: 2px solid #5d2c8d;
+        position: relative;
+        cursor: pointer;
+      }
+      
+      .death-star-toggle.active {
+        background: #00ffff;
+      }
+      
+      .death-star-toggle::before {
+        content: '';
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        background: #5d2c8d;
+        top: 2px;
+        left: 2px;
+      }
+      
+      .death-star-toggle.active::before {
+        left: auto;
+        right: 2px;
+        background: #000;
+      }
+      
+      .death-star-input {
+        background: #1a0b2e;
+        border: 2px solid #5d2c8d;
+        color: #00ffff;
+        font-family: 'Courier New', monospace;
+        padding: 4px;
+        text-align: right;
+        width: 100px;
+      }
+      
+      .death-star-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 9997;
+        display: none;
+      }
+      
+      .death-star-overlay.show {
+        display: block;
+      }
+      
+      .death-star-submenu-item.has-option-group {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      
+      .death-star-submenu-item-label {
+        width: 100%;
+        display: flex;
+        align-items: center;
+      }
+    `,
+    pinkWhite: `
+      .death-star-button {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background: #fff;
+        border: 2px solid #fbcfe8;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 15px rgba(244, 114, 182, 0.3);
+        transition: all 0.3s ease;
+        user-select: none;
+      }
+      
+      .death-star-button:hover {
+        transform: scale(1.1) rotate(10deg);
+        box-shadow: 0 6px 20px rgba(244, 114, 182, 0.5);
+        border-color: #f472b6;
+      }
+      
+      .death-star-button::before {
+        content: '🌸';
+        font-size: 24px;
+      }
+      
+      .death-star-button::after {
+        display: none;
+      }
+      
+      .death-star-icon {
+        display: none;
+      }
+      
+      .death-star-menu {
+        position: fixed;
+        width: 300px;
+        min-height: 200px;
+        background: rgba(255, 255, 255, 0.95);
+        border: 2px solid #fbcfe8;
+        border-radius: 20px;
+        box-shadow: 0 10px 40px rgba(244, 114, 182, 0.2);
+        z-index: 9998;
+        backdrop-filter: blur(10px);
+        opacity: 0;
+        transform: translateY(-20px);
+        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        pointer-events: none;
+      }
+      
+      .death-star-menu.show {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: all;
+      }
+      
+      .death-star-menu-header {
+        padding: 20px;
+        background: linear-gradient(135deg, #fdf2f8, #fff);
+        border-bottom: 1px solid #fbcfe8;
+        border-radius: 20px 20px 0 0;
+      }
+      
+      .death-star-menu-title {
+        color: #be185d;
+        font-size: 18px;
+        font-weight: bold;
+        text-align: center;
+        letter-spacing: 1px;
+      }
+      
+      .death-star-menu-content {
+        padding: 20px;
+      }
+      
+      .death-star-menu-item {
+        display: flex;
+        align-items: center;
+        padding: 12px 15px;
+        margin: 10px 0;
+        background: #fff;
+        border: 1px solid #fce7f3;
+        border-radius: 12px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        color: #831843;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.02);
+      }
+      
+      .death-star-menu-item:hover {
+        background: #fdf2f8;
+        border-color: #fbcfe8;
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(244, 114, 182, 0.15);
+      }
+      
+      .death-star-menu-item-icon {
+        margin-right: 12px;
+        font-size: 18px;
+        color: #db2777;
+      }
+      
+      .death-star-menu-item-text {
+        flex: 1;
+        font-weight: 500;
+      }
+      
+      .death-star-menu-item-arrow {
+        color: #f472b6;
+      }
+      
+      .death-star-submenu {
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.4s ease;
+        background: #fff;
+        border-radius: 12px;
+        margin-top: 10px;
+        border: 1px solid #fce7f3;
+      }
+      
+      .death-star-submenu.expanded {
+        max-height: 400px;
+        padding: 15px;
+        overflow-y: auto;
+      }
+      
+      .death-star-submenu-title {
+        color: #db2777;
+        font-size: 14px;
+        font-weight: bold;
+        margin: 10px 0;
+        border-bottom: 2px solid #fce7f3;
+        padding-bottom: 5px;
+      }
+      
+      .death-star-submenu-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px;
+        margin: 6px 0;
+        background: #fff;
+        border: 1px solid #f3f4f6;
+        border-radius: 10px;
+        color: #4b5563;
+        transition: all 0.2s ease;
+      }
+      
+      .death-star-submenu-item:hover {
+        background: #fdf2f8;
+        border-color: #fbcfe8;
+        color: #be185d;
+      }
+      
+      .death-star-submenu-item.has-option-group {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      
+      .death-star-submenu-item-label {
+        width: 100%;
+        display: flex;
+        align-items: center;
+      }
+      
+      .death-star-toggle {
+        width: 44px;
+        height: 24px;
+        background: #e5e7eb;
+        border-radius: 12px;
+        position: relative;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        border: none;
+      }
+      
+      .death-star-toggle.active {
+        background: #f472b6;
+      }
+      
+      .death-star-toggle::before {
+        content: '';
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        background: #fff;
+        border-radius: 50%;
+        top: 2px;
+        left: 2px;
+        transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+      
+      .death-star-toggle.active::before {
+        transform: translateX(20px);
+      }
+      
+      .death-star-input {
+        background: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 6px 10px;
+        color: #4b5563;
+        text-align: center;
+        font-family: inherit;
+        outline: none;
+      }
+      
+      .death-star-input:focus {
+        border-color: #f472b6;
+        box-shadow: 0 0 0 3px rgba(244, 114, 182, 0.1);
+      }
+      
+      .death-star-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.6);
+        backdrop-filter: blur(2px);
+        z-index: 9997;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
+      }
+      
+      .death-star-overlay.show {
+        opacity: 1;
+        pointer-events: all;
+      }
+    `
+  };
 
   // --------------------------------------------------------------
 
@@ -806,9 +1984,9 @@ $(() => {
 
   // --------------------------------------------------------------
 
-  // 注入样式
+  // 注入样式 (初始为空，等待加载设置后应用)
   if (!$('#death-star-menu-styles').length) {
-    $('head').append(deathStarStyles);
+    $('head').append(`<style id="death-star-menu-styles">${themes.deathStar}</style>`);
   }
 
   // 创建死兆星按钮
@@ -952,6 +2130,28 @@ $(() => {
         </div>
         <div class="death-star-menu-content">
           ${menuContent}
+          
+          <!-- 始终在最下方的菜单主题设置 -->
+          <div class="death-star-menu-item" data-action="theme-settings">
+            <div class="death-star-menu-item-text">菜单主题</div>
+            <div class="death-star-menu-item-arrow">▶</div>
+          </div>
+          <div class="death-star-submenu" data-submenu="theme-settings">
+            <div class="death-star-submenu-title">外观风格</div>
+            <div class="death-star-submenu-item">
+              <div class="death-star-submenu-item-label">
+                <div class="death-star-submenu-item-icon">🎨</div>
+                <span>选择主题</span>
+              </div>
+              <select class="death-star-select" data-select="menuTheme">
+                <option value="deathStar">死兆星</option>
+                <option value="deepSea">深海</option>
+                <option value="blackWhite">黑白</option>
+                <option value="pixel">像素</option>
+                <option value="pinkWhite">粉白</option>
+              </select>
+            </div>
+          </div>
         </div>
       </div>
     `);
@@ -982,6 +2182,12 @@ $(() => {
     // 初始化扩展设置
     if (!ST.extensionSettings.Astro) {
       ST.extensionSettings.Astro = {};
+    }
+
+    // 应用主题
+    function applyTheme(themeName) {
+      const css = themes[themeName] || themes.deathStar;
+      $('#death-star-menu-styles').html(css);
     }
 
     // 清理可能存在的旧事件监听器
@@ -1308,6 +2514,11 @@ $(() => {
       ST.extensionSettings.Astro[selectKey] = selectedValue;
       saveExtensionSettings();
 
+      // 如果是主题设置，立即应用
+      if (selectKey === 'menuTheme') {
+        applyTheme(selectedValue);
+      }
+
       // 显示选择提示
       const selectName = $select.closest('.death-star-submenu-item').find('span').text();
       toastr.info(`${selectName}: ${selectedText}`, 'DIE Astro');
@@ -1375,6 +2586,10 @@ $(() => {
           $select.val(savedValue);
         }
       });
+
+      // 应用保存的主题
+      const savedTheme = ST.extensionSettings.Astro.menuTheme || 'deathStar';
+      applyTheme(savedTheme);
 
       // 加载输入框状态
       $('.death-star-input').each(function () {
