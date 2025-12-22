@@ -59,7 +59,7 @@ let loadSettingsToMacroNestForm = null;
 
     const regexForRegex = /regex\/[^/]+\.js/;
     if (regexForRegex.test(stack) && stack.includes('getRegexScripts')) {
-      if (result.toString() === [0,1,2].toString()) {
+      if (result.toString() === [0, 1, 2].toString()) {
         if (window.versionNumber >= 11400) {
           return [1, 0, 2];
         }
@@ -570,7 +570,9 @@ function reloadSettings() {
     RegexBinding: {},
   };
   if (oldST || !ctx.chatCompletionSettings.extensions || !ctx.chatCompletionSettings.extensions.SPreset) {
-    ctx.chatCompletionSettings.extensions = {};
+    if (!ctx.chatCompletionSettings.extensions) {
+      ctx.chatCompletionSettings.extensions = {};
+    }
     const settingsFromPrompt = getPrompt('SPresetSettings');
     if (settingsFromPrompt) {
       ctx.chatCompletionSettings.extensions.SPreset = JSON.parse(settingsFromPrompt);
@@ -846,7 +848,9 @@ const ChatSquash = () => {
     menu.find('#enable_stop_string').prop('checked', SPresetSettings.ChatSquash.enable_stop_string);
     if (SPresetSettings.ChatSquash.enable_stop_string && SPresetSettings.ChatSquash.stop_string) {
       try {
-        ctx.powerUserSettings.custom_stopping_strings = JSON.stringify(JSON.parse(SPresetSettings.ChatSquash.stop_string));
+        ctx.powerUserSettings.custom_stopping_strings = JSON.stringify(
+          JSON.parse(SPresetSettings.ChatSquash.stop_string),
+        );
       } catch (e) {
         ctx.powerUserSettings.custom_stopping_strings = JSON.stringify([SPresetSettings.ChatSquash.stop_string]);
       }
@@ -905,9 +909,7 @@ const ChatSquash = () => {
   const listenerList = ctx.eventSource.events[ctx.eventTypes.CHAT_COMPLETION_SETTINGS_READY];
   if (listenerList) {
     for (let i = 0; i < listenerList.length; i++) {
-      if (
-        listenerList[i].toString().includes('merge config >>>>>>>>>>>>> Final Message Structure <<<<<<<<<<<<<<<<<')
-      ) {
+      if (listenerList[i].toString().includes('merge config >>>>>>>>>>>>> Final Message Structure <<<<<<<<<<<<<<<<<')) {
         const originalListener = listenerList[i];
         listenerList[i] = data1 => {
           if (!SPresetSettings.ChatSquash.enabled) {
@@ -1509,18 +1511,18 @@ const RegexBinding = () => {
 
   let presetLoaded = SillyTavern.getContext().chatCompletionSettings.preset_settings_openai;
 
-  ctx.eventSource.on('settings_updated', () => {
+  ctx.eventSource.on('oai_preset_changed_after', () => {
     if (SillyTavern.getContext().chatCompletionSettings.preset_settings_openai !== presetLoaded) {
       presetLoaded = SillyTavern.getContext().chatCompletionSettings.preset_settings_openai;
       reloadSettings();
       if (SPresetSettings.RegexBinding.regexes) {
         syncToST();
-      } else if (versionNumber < 11305) {
-        return;
       } else {
         syncFromST();
       }
-    } 
+    } else if (versionNumber < 11305) {
+      return;
+    }
     try {
       const newPresetRegexes = getRegexesFromPreset();
       const oldIdOrder = presetRegexes.map(s => s.id);
@@ -1628,9 +1630,12 @@ const RegexBinding = () => {
 
   function syncFromST() {
     if (versionNumber >= 11305) {
+      if (!SPresetSettings.RegexBinding.regexes) {
+        SPresetSettings.RegexBinding.regexes = [];
+      }
       ctx.chatCompletionSettings.extensions.regex_scripts.forEach(s => {
-        if (!presetRegexes.find(s2 => s2.id === s.id)) {
-          presetRegexes.push(s);
+        if (!SPresetSettings.RegexBinding.regexes.find(s2 => s2.id === s.id)) {
+          SPresetSettings.RegexBinding.regexes.push(s);
         }
       });
       renderPresetRegexes();
