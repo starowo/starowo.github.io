@@ -1481,7 +1481,7 @@ $(() => {
 
   function saveExtensionSettings() {
     ST.saveSettingsDebounced();
-    if (window.SPresetTempData) {
+    if (window.SPresetTempData !== undefined) {
       if (!window.SPresetTempData.Astro) {
         window.SPresetTempData.Astro = {};
       }
