@@ -1515,12 +1515,12 @@ const RegexBinding = () => {
       reloadSettings();
       if (SPresetSettings.RegexBinding.regexes) {
         syncToST();
+      } else if (versionNumber < 11305) {
+        return;
+      } else {
+        syncFromST();
       }
-    } else if (versionNumber < 11305) {
-      return;
-    } else {
-      syncFromST();
-    }
+    } 
     try {
       const newPresetRegexes = getRegexesFromPreset();
       const oldIdOrder = presetRegexes.map(s => s.id);
