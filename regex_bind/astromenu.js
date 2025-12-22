@@ -1357,6 +1357,7 @@ $(() => {
         let isActive = ST.extensionSettings.Astro[toggleKey];
         if (isActive === undefined) {
           isActive = defaults[toggleKey];
+          ST.extensionSettings.Astro[toggleKey] = isActive;
         }
 
         if (isActive !== undefined) {
@@ -1382,12 +1383,14 @@ $(() => {
         let savedValue = ST.extensionSettings.Astro[valueKey];
         if (savedValue === undefined) {
           savedValue = defaults[valueKey];
+          ST.extensionSettings.Astro[valueKey] = savedValue;
         }
         
         if (savedValue !== undefined) {
           $input.val(savedValue);
         }
       });
+      saveExtensionSettings();
     }
 
     // 单行选项组点击事件
