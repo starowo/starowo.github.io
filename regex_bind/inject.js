@@ -846,15 +846,6 @@ const ChatSquash = () => {
     menu.find('#squash_role').val(SPresetSettings.ChatSquash.role);
     menu.find('#stop_string').val(SPresetSettings.ChatSquash.stop_string);
     menu.find('#enable_stop_string').prop('checked', SPresetSettings.ChatSquash.enable_stop_string);
-    if (SPresetSettings.ChatSquash.enable_stop_string && SPresetSettings.ChatSquash.stop_string) {
-      try {
-        ctx.powerUserSettings.custom_stopping_strings = JSON.stringify(
-          JSON.parse(SPresetSettings.ChatSquash.stop_string),
-        );
-      } catch (e) {
-        ctx.powerUserSettings.custom_stopping_strings = JSON.stringify([SPresetSettings.ChatSquash.stop_string]);
-      }
-    }
     menu.find('#user_prefix').val(SPresetSettings.ChatSquash.user_prefix);
     menu.find('#user_suffix').val(SPresetSettings.ChatSquash.user_suffix);
     menu.find('#char_prefix').val(SPresetSettings.ChatSquash.char_prefix);
@@ -880,9 +871,6 @@ const ChatSquash = () => {
     SPresetSettings.ChatSquash.role = menu.find('#squash_role').val();
     SPresetSettings.ChatSquash.stop_string = menu.find('#stop_string').val();
     SPresetSettings.ChatSquash.enable_stop_string = menu.find('#enable_stop_string').prop('checked');
-    if (SPresetSettings.ChatSquash.enable_stop_string && SPresetSettings.ChatSquash.stop_string) {
-      ctx.powerUserSettings.custom_stopping_strings = JSON.stringify([SPresetSettings.ChatSquash.stop_string]);
-    }
     SPresetSettings.ChatSquash.user_prefix = menu.find('#user_prefix').val();
     SPresetSettings.ChatSquash.user_suffix = menu.find('#user_suffix').val();
     SPresetSettings.ChatSquash.char_prefix = menu.find('#char_prefix').val();
@@ -1022,6 +1010,23 @@ const ChatSquash = () => {
     console.log('APP_READY', data);
     ctx.eventSource.makeFirst(ctx.eventTypes.CHAT_COMPLETION_PROMPT_READY, storeChatCompletionPromptReadyData);
     ctx.eventSource.makeLast(ctx.eventTypes.CHAT_COMPLETION_PROMPT_READY, handleChatCompletionPromptReady);
+  });
+
+  ctx.eventSource.on(ctx.eventTypes.CHAT_COMPLETION_SETTINGS_READY, data => {
+    if (SPresetSettings.ChatSquash.enable_stop_string && SPresetSettings.ChatSquash.stop_string) {
+      let custom_stopping_strings = [];
+      try {
+        custom_stopping_strings = JSON.parse(SPresetSettings.ChatSquash.stop_string);
+      } catch (e) {
+        custom_stopping_strings = [SPresetSettings.ChatSquash.stop_string];
+      }
+      if (data.stop) {
+        data.stop = data.stop.filter(item => !custom_stopping_strings.includes(item));
+        data.stop.push(...custom_stopping_strings);
+      } else {
+        data.stop = custom_stopping_strings;
+      }
+    }
   });
 
   function squashPrompts(prompts) {
