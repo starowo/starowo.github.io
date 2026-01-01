@@ -1040,9 +1040,23 @@ const ChatSquash = () => {
     let lastRole = '';
     let mergedContent = '';
 
+    const attachments = [];
+
     for (const prompt of newPrompts) {
       if (!prompt.content) {
         continue;
+      }
+      if (Array.isArray(prompt.content)) {
+        let textContent = '';
+        for (const item of prompt.content) {
+          if (item.type === 'text') {
+            textContent += item.text;
+          } else {
+            textContent += `<｜attachment｜${attachments.length}｜>`;
+            attachments.push(item);
+          }
+        }
+        prompt.content = textContent;
       }
       if (settings.user_role_system && prompt.role === 'system') {
         prompt.role = 'user';
@@ -1082,7 +1096,7 @@ const ChatSquash = () => {
           }
           prompts.push({
             role: squashRole,
-            content: postProcess(mergedContent),
+            content: restoreAttachments(postProcess(mergedContent), attachments),
           });
         }
         if (settings.role === 'follow') {
@@ -1136,10 +1150,26 @@ const ChatSquash = () => {
       }
       prompts.push({
         role: squashRole,
-        content: postProcess(mergedContent),
+        content: restoreAttachments(postProcess(mergedContent), attachments),
       });
     }
     return prompts;
+  }
+
+  function restoreAttachments(content, attachments) {
+    if (attachments.length === 0) {
+      return content;
+    }
+    const contentParts = [];
+    const matchPattern = /<｜attachment｜(\d+)｜>/g;
+    let match;
+    while ((match = matchPattern.exec(content)) !== null) {
+      contentParts.push({ type: 'text', text: content.slice(0, match.index) });
+      contentParts.push(attachments[match[1]]);
+      content = content.slice(match.index + match[0].length);
+    }
+    contentParts.push({ type: 'text', text: content });
+    return contentParts;
   }
 
   function postProcess(prompt) {
