@@ -929,9 +929,7 @@ const ChatSquash = () => {
     return originalOn.apply(this, [event, listener]);
   };
 
-
   const handleChatCompletionPromptReady = data => {
-    const data = window.SPresetTempData.chatCompletionPromptReadyData;
     if (!SPresetSettings.ChatSquash.enabled) {
       return;
     }
