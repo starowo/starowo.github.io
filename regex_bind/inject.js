@@ -929,11 +929,8 @@ const ChatSquash = () => {
     return originalOn.apply(this, [event, listener]);
   };
 
-  const storeChatCompletionPromptReadyData = data => {
-    window.SPresetTempData.chatCompletionPromptReadyData = data;
-  };
 
-  const handleChatCompletionPromptReady = ignored => {
+  const handleChatCompletionPromptReady = data => {
     const data = window.SPresetTempData.chatCompletionPromptReadyData;
     if (!SPresetSettings.ChatSquash.enabled) {
       return;
@@ -943,11 +940,11 @@ const ChatSquash = () => {
     const settings = SPresetSettings.ChatSquash;
     const promptManager = SPresetImports.promptManager;
     if (settings.separate_chat_history) {
-      data.chat.length = 0;
-      data.chat.push(...getChat(promptManager));
-      console.log('data.chat', data.chat);
+      data.prompt.length = 0;
+      data.prompt.push(...getChat(promptManager));
+      console.log('data.prompt', data.prompt);
     } else {
-      squashPrompts(data.chat);
+      squashPrompts(data.prompt);
     }
 
     function getChat(chatData) {
@@ -987,8 +984,7 @@ const ChatSquash = () => {
 
   ctx.eventSource.on(ctx.eventTypes.APP_READY, data => {
     console.log('APP_READY', data);
-    ctx.eventSource.makeFirst(ctx.eventTypes.CHAT_COMPLETION_PROMPT_READY, storeChatCompletionPromptReadyData);
-    ctx.eventSource.makeLast(ctx.eventTypes.CHAT_COMPLETION_PROMPT_READY, handleChatCompletionPromptReady);
+    ctx.eventSource.makeLast(ctx.eventTypes.GENERATE_AFTER_DATA, handleChatCompletionPromptReady);
     const listenerList = ctx.eventSource.events[ctx.eventTypes.CHAT_COMPLETION_SETTINGS_READY];
     if (listenerList) {
       for (let i = 0; i < listenerList.length; i++) {
@@ -1008,8 +1004,7 @@ const ChatSquash = () => {
   });
   ctx.eventSource.on(ctx.eventTypes.SETTINGS_UPDATED, data => {
     console.log('APP_READY', data);
-    ctx.eventSource.makeFirst(ctx.eventTypes.CHAT_COMPLETION_PROMPT_READY, storeChatCompletionPromptReadyData);
-    ctx.eventSource.makeLast(ctx.eventTypes.CHAT_COMPLETION_PROMPT_READY, handleChatCompletionPromptReady);
+    ctx.eventSource.makeLast(ctx.eventTypes.GENERATE_AFTER_DATA, handleChatCompletionPromptReady);
   });
 
   ctx.eventSource.on(ctx.eventTypes.CHAT_COMPLETION_SETTINGS_READY, data => {
