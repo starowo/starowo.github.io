@@ -1962,6 +1962,9 @@ const RegexBinding = () => {
   }
 
   async function renderPresetRegexes() {
+    if (versionNumber >= 11305) {
+      return;
+    }
     injectBindButtons();
     updateCss();
     if ($('#preset_scripts_block').length > 0) {
