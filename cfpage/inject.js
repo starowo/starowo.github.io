@@ -51,7 +51,6 @@ let loadSettingsToMacroNestForm = null;
 
 (() => {
   const _originalObjectValues = Object.values;
-  window.__regexScriptOrder = [2, 0, 1]; // preset(2) -> global(0) -> character(1)
 
   Object.values = function (target) {
     const stack = new Error().stack;
@@ -60,8 +59,11 @@ let loadSettingsToMacroNestForm = null;
 
     const regexForRegex = /regex\/[^/]+\.js/;
     if (regexForRegex.test(stack) && stack.includes('getRegexScripts')) {
-      if (result.length === 3 && [0, 1, 2].every(v => result.includes(v))) {
-        return [...window.__regexScriptOrder];
+      if (result.toString() === [0, 1, 2].toString()) {
+        if (window.versionNumber >= 11400) {
+          return [1, 0, 2];
+        }
+        return [2, 0, 1];
       }
     }
 
@@ -1004,7 +1006,7 @@ const ChatSquash = () => {
   });
 
   ctx.eventSource.on(ctx.eventTypes.CHAT_COMPLETION_SETTINGS_READY, data => {
-    if (SPresetSettings.ChatSquash.enable_stop_string && SPresetSettings.ChatSquash.stop_string && SPresetSettings.ChatSquash.enabled) {
+    if (SPresetSettings.ChatSquash.enable_stop_string && SPresetSettings.ChatSquash.stop_string) {
       let custom_stopping_strings = [];
       try {
         custom_stopping_strings = JSON.parse(SPresetSettings.ChatSquash.stop_string);
@@ -1331,166 +1333,6 @@ const RegexBinding = () => {
   const extensions = ctx.extensionSettings;
   const presetRegexes = getRegexesFromPreset();
   const lockedRegexes = loadLockedRegexes();
-
-  // Load saved activation order if available
-  if (SGlobalSettings.RegexBinding && SGlobalSettings.RegexBinding.activationOrder) {
-    window.__regexScriptOrder = SGlobalSettings.RegexBinding.activationOrder;
-  }
-
-  if (versionNumber >= 11305) {
-    // 11305+ has built-in regex binding; ST is source of truth, only sync FROM ST
-    const stHasRegexScripts =
-      ctx.chatCompletionSettings.extensions.regex_scripts &&
-      ctx.chatCompletionSettings.extensions.regex_scripts.length > 0;
-
-    // Migrate old xiaobai_ext format if present
-    if (
-      ctx.chatCompletionSettings.prompt_order[1] &&
-      ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext &&
-      ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext.regexBindings
-    ) {
-      ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext.regexBindings.scripts
-        .filter(s => !presetRegexes.find(s2 => s2.id === s.id))
-        .forEach(s => presetRegexes.push(s));
-      ctx.chatCompletionSettings.prompt_order[1].xiaobai_ext.regexBindings = null;
-    }
-
-    if (stHasRegexScripts) {
-      // ST already has regex_scripts (built-in system is authoritative), sync FROM ST
-      presetRegexes.length = 0;
-      presetRegexes.push(...ctx.chatCompletionSettings.extensions.regex_scripts);
-      saveRegexesToPreset(presetRegexes);
-    } else if (presetRegexes.length > 0) {
-      // ST has no regex_scripts but we have old data, migrate TO ST
-      syncToST();
-    }
-
-    // Clean up legacy preset_ entries from global regex list
-    const originalLength = extensions.regex.length;
-    extensions.regex = extensions.regex.filter(
-      s => !s.id.startsWith('preset_') && !s.scriptName?.startsWith('[s]') && !s['preset-regex'],
-    );
-    if (extensions.regex.length !== originalLength) {
-      ctx.reloadCurrentChat();
-    }
-
-    // Inject activation order sort button into regex settings button area
-    const activationSortButton = $(`
-      <div id="sort_activation_order" class="menu_button menu_button_icon interactable" title="排序正则类型执行顺序" tabindex="0">
-        <i class="fa-solid fa-arrow-down-1-9"></i>
-        <small>执行顺序</small>
-      </div>
-    `);
-    activationSortButton.on('click', async () => {
-      await popupActivationSortPanel();
-    });
-    const targetButton = $('#import_regex');
-    if (targetButton.length) {
-      targetButton.parent().append(activationSortButton);
-    }
-
-    let presetLoaded11305 = ctx.chatCompletionSettings.preset_settings_openai;
-    ctx.eventSource.on('oai_preset_changed_after', () => {
-      if (ctx.chatCompletionSettings.preset_settings_openai !== presetLoaded11305) {
-        presetLoaded11305 = ctx.chatCompletionSettings.preset_settings_openai;
-        reloadSettings();
-        const stHasScripts =
-          ctx.chatCompletionSettings.extensions.regex_scripts &&
-          ctx.chatCompletionSettings.extensions.regex_scripts.length > 0;
-        if (stHasScripts) {
-          syncFromST();
-        } else if (SPresetSettings.RegexBinding.regexes && SPresetSettings.RegexBinding.regexes.length > 0) {
-          syncToST();
-        }
-      }
-    });
-
-    async function popupActivationSortPanel() {
-      const typeNames = {
-        0: '全局正则',
-        1: '角色卡正则',
-        2: '预设正则',
-      };
-      let currentOrder = [...window.__regexScriptOrder];
-
-      const popupHtml = $(`
-        <div id="activation_order_sort_panel">
-          <div class="regex_editor">
-            <h3 class="flex-container justifyCenter">
-              <strong>正则执行顺序</strong>
-            </h3>
-            <small class="flex-container extensions_info">
-              调整不同类型正则的执行顺序。排在前面的类型优先执行。
-            </small>
-            <hr />
-            <div id="activation_order_list" class="flex-container flexFlowColumn" style="gap: 4px;">
-            </div>
-          </div>
-        </div>
-      `);
-
-      function renderOrderList() {
-        const container = popupHtml.find('#activation_order_list');
-        container.empty();
-        currentOrder.forEach((type, index) => {
-          const item = $(`
-            <div class="flex-container alignItemsCenter padding5" data-index="${index}" style="border: 1px solid #333; border-radius: 4px; background: rgba(42, 42, 42, 0.3);">
-              <div class="flex1" style="font-weight: bold; padding: 4px 8px;">
-                ${index + 1}. ${typeNames[type]}
-              </div>
-              <div class="flex-container flexNoGap">
-                <div class="menu_button menu_button_icon activation-up ${index === 0 ? 'disabled' : ''}" data-index="${index}" title="上移">
-                  <i class="fa-solid fa-chevron-up"></i>
-                </div>
-                <div class="menu_button menu_button_icon activation-down ${index === currentOrder.length - 1 ? 'disabled' : ''}" data-index="${index}" title="下移">
-                  <i class="fa-solid fa-chevron-down"></i>
-                </div>
-              </div>
-            </div>
-          `);
-          container.append(item);
-        });
-      }
-
-      popupHtml.on('click', '.activation-up:not(.disabled)', function (e) {
-        e.stopPropagation();
-        const idx = parseInt($(this).data('index'));
-        if (idx > 0) {
-          [currentOrder[idx], currentOrder[idx - 1]] = [currentOrder[idx - 1], currentOrder[idx]];
-          renderOrderList();
-        }
-      });
-
-      popupHtml.on('click', '.activation-down:not(.disabled)', function (e) {
-        e.stopPropagation();
-        const idx = parseInt($(this).data('index'));
-        if (idx < currentOrder.length - 1) {
-          [currentOrder[idx], currentOrder[idx + 1]] = [currentOrder[idx + 1], currentOrder[idx]];
-          renderOrderList();
-        }
-      });
-
-      renderOrderList();
-
-      const result = await ctx.callGenericPopup(popupHtml.get(0), ctx.POPUP_TYPE.CONFIRM, '', {
-        okButton: '保存',
-        cancelButton: '取消',
-      });
-
-      if (result) {
-        window.__regexScriptOrder = currentOrder;
-        if (!SGlobalSettings.RegexBinding) {
-          SGlobalSettings.RegexBinding = {};
-        }
-        SGlobalSettings.RegexBinding.activationOrder = currentOrder;
-        ctx.extensionSettings.SPreset = SGlobalSettings;
-        ctx.saveSettingsDebounced();
-        toastr.success('正则执行顺序已保存');
-      }
-    }
-
-    return;
-  }
 
   const regexButtons = $('#open_preset_editor');
   if (regexButtons.length !== 0) {
