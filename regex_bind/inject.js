@@ -21,9 +21,13 @@ let SPresetSettings = {
     squashed_post_script: '',
   },
   MacroNest: false,
+  ToolBindings: {},
 };
 
 window.SPresetTempData = {};
+
+// Tool binding management state
+const spresetRegisteredTools = new Map(); // toolId -> uuid
 
 window.versionNumber = 10000;
 
@@ -454,6 +458,63 @@ $(async () => {
   RegexBinding();
   loadSettingsToChatSquashForm = ChatSquash();
   loadSettingsToMacroNestForm = MacroNest();
+  syncSPresetToolRegistrations();
+
+  // 暴露工具绑定 API 供 iframe 编辑器调用
+  window.SPresetToolBinding = {
+    validateToolCode: validateSPresetToolCode,
+    saveToolBinding(identifier, data) {
+      const { uuidv4 } = SillyTavern.getContext();
+      const validation = data.code.trim() ? validateSPresetToolCode(data.code) : { valid: false, error: '' };
+
+      if (!SPresetSettings.ToolBindings) {
+        SPresetSettings.ToolBindings = {};
+      }
+
+      SPresetSettings.ToolBindings[identifier] = {
+        enabled: data.enabled,
+        code: data.code,
+        valid: validation.valid,
+        uuid: uuidv4(),
+      };
+
+      // 持久化
+      if (!ctx.chatCompletionSettings.extensions) {
+        ctx.chatCompletionSettings.extensions = {};
+      }
+      ctx.chatCompletionSettings.extensions.SPreset = SPresetSettings;
+      if (getPrompt('SPresetSettings')) {
+        setPrompt('SPresetSettings', JSON.stringify(SPresetSettings));
+      } else {
+        addPrompt('SPresetSettings', 'SPreset配置', JSON.stringify(SPresetSettings));
+      }
+      ctx.saveSettingsDebounced();
+
+      // 重新同步注册
+      syncSPresetToolRegistrations();
+
+      return validation;
+    },
+    getToolBinding(identifier) {
+      return SPresetSettings.ToolBindings?.[identifier] || null;
+    },
+    deleteToolBinding(identifier) {
+      if (SPresetSettings.ToolBindings?.[identifier]) {
+        delete SPresetSettings.ToolBindings[identifier];
+        if (!ctx.chatCompletionSettings.extensions) {
+          ctx.chatCompletionSettings.extensions = {};
+        }
+        ctx.chatCompletionSettings.extensions.SPreset = SPresetSettings;
+        if (getPrompt('SPresetSettings')) {
+          setPrompt('SPresetSettings', JSON.stringify(SPresetSettings));
+        } else {
+          addPrompt('SPresetSettings', 'SPreset配置', JSON.stringify(SPresetSettings));
+        }
+        ctx.saveSettingsDebounced();
+        syncSPresetToolRegistrations();
+      }
+    },
+  };
 });
 
 function substituteParamsRecursive(
@@ -563,6 +624,7 @@ function reloadSettings() {
     },
     RegexBinding: {},
     MacroNest: false,
+    ToolBindings: {},
   };
   const defaultGlobalSettings = {
     RegexBinding: {},
@@ -579,6 +641,9 @@ function reloadSettings() {
   const temp1 = ctx.chatCompletionSettings.extensions.SPreset;
   if (temp1 && !temp1.ChatSquash) {
     temp1.ChatSquash = defaultPresetSettings.ChatSquash;
+  }
+  if (temp1 && !temp1.ToolBindings) {
+    temp1.ToolBindings = {};
   }
   const temp2 = ctx.extensionSettings.SPreset;
   SPresetSettings = temp1 || defaultPresetSettings;
@@ -1020,6 +1085,11 @@ const ChatSquash = () => {
     }
   });
 
+  // 在生成前同步工具注册
+  ctx.eventSource.on(ctx.eventTypes.CHAT_COMPLETION_SETTINGS_READY, () => {
+    syncSPresetToolRegistrations();
+  });
+
   function squashPrompts(prompts) {
     const settings = SPresetSettings.ChatSquash;
     let squashRole = settings.role;
@@ -1394,6 +1464,8 @@ const RegexBinding = () => {
       if (ctx.chatCompletionSettings.preset_settings_openai !== presetLoaded11305) {
         presetLoaded11305 = ctx.chatCompletionSettings.preset_settings_openai;
         reloadSettings();
+        unregisterAllSPresetTools();
+        syncSPresetToolRegistrations();
         const stHasScripts =
           ctx.chatCompletionSettings.extensions.regex_scripts &&
           ctx.chatCompletionSettings.extensions.regex_scripts.length > 0;
@@ -1701,6 +1773,8 @@ const RegexBinding = () => {
     if (SillyTavern.getContext().chatCompletionSettings.preset_settings_openai !== presetLoaded) {
       presetLoaded = SillyTavern.getContext().chatCompletionSettings.preset_settings_openai;
       reloadSettings();
+      unregisterAllSPresetTools();
+      syncSPresetToolRegistrations();
       if (SPresetSettings.RegexBinding.regexes) {
         syncToST();
       } else {
@@ -2991,6 +3065,156 @@ const promptTemplate = {
   injection_trigger: null,
   forbid_overrides: false,
 };
+
+// ============================================================
+// 工具绑定 —— SPreset Tool Binding (类似 SToolBook)
+// ============================================================
+
+const SPRESET_TOOL_REQUIRED_KEYS = ['name', 'description', 'parameters', 'action'];
+
+/**
+ * 验证工具代码是否返回包含必要属性的对象
+ * @param {string} code
+ * @returns {{ valid: boolean, error?: string }}
+ */
+function validateSPresetToolCode(code) {
+  if (!code || !code.trim()) {
+    return { valid: false, error: '代码不能为空' };
+  }
+  try {
+    const fn = new Function(code);
+    const result = fn();
+    if (result === null || result === undefined || typeof result !== 'object') {
+      return { valid: false, error: '代码必须返回一个对象' };
+    }
+    const missing = SPRESET_TOOL_REQUIRED_KEYS.filter(k => !(k in result));
+    if (missing.length > 0) {
+      return { valid: false, error: '缺少必要属性: ' + missing.join(', ') };
+    }
+    if (typeof result.name !== 'string' || !result.name.trim()) {
+      return { valid: false, error: 'name 必须是非空字符串' };
+    }
+    if (typeof result.description !== 'string') {
+      return { valid: false, error: 'description 必须是字符串' };
+    }
+    if (typeof result.parameters !== 'object') {
+      return { valid: false, error: 'parameters 必须是对象' };
+    }
+    if (typeof result.action !== 'function') {
+      return { valid: false, error: 'action 必须是函数' };
+    }
+    return { valid: true };
+  } catch (e) {
+    return { valid: false, error: e.message || String(e) };
+  }
+}
+
+/**
+ * 执行用户工具代码，返回工具定义对象
+ * @param {string} code
+ * @returns {object|null}
+ */
+function executeSPresetToolCode(code) {
+  if (!code || !code.trim()) return null;
+  try {
+    const fn = new Function(code);
+    const result = fn();
+    if (!result || typeof result !== 'object') return null;
+    const missing = SPRESET_TOOL_REQUIRED_KEYS.filter(k => !(k in result));
+    if (missing.length > 0) return null;
+    return result;
+  } catch (e) {
+    console.warn('[SPreset-ToolBinding] 执行工具代码失败:', e);
+    return null;
+  }
+}
+
+/**
+ * 获取当前 prompt_order 中已启用的 identifier 集合
+ * @returns {Set<string>}
+ */
+function getActiveEntryIdentifiers() {
+  const settings = ctx.chatCompletionSettings;
+  const promptOrder = settings.prompt_order || [];
+  const activeOrderEntry = promptOrder.find(po => po.character_id === 100001);
+  if (!activeOrderEntry) return new Set();
+  const enabled = new Set();
+  for (const item of activeOrderEntry.order) {
+    if (item.enabled !== false) {
+      enabled.add(item.identifier);
+    }
+  }
+  return enabled;
+}
+
+/**
+ * 注销所有已注册的 SPreset 工具
+ */
+function unregisterAllSPresetTools() {
+  const { unregisterFunctionTool } = SillyTavern.getContext();
+  for (const [toolId] of spresetRegisteredTools) {
+    try { unregisterFunctionTool(toolId); } catch (e) { /* ignore */ }
+  }
+  spresetRegisteredTools.clear();
+  console.log('[SPreset-ToolBinding] 已注销所有工具');
+}
+
+/**
+ * 根据 ToolBindings + 激活条目重新同步工具注册
+ */
+function syncSPresetToolRegistrations() {
+  const { registerFunctionTool, unregisterFunctionTool } = SillyTavern.getContext();
+  const toolBindings = SPresetSettings.ToolBindings || {};
+  const activeIdentifiers = getActiveEntryIdentifiers();
+
+  // 收集应注册的工具
+  const shouldRegister = new Map();
+  for (const [identifier, binding] of Object.entries(toolBindings)) {
+    if (!binding.valid || !binding.enabled) continue;
+    if (!activeIdentifiers.has(identifier)) continue;
+
+    const toolDef = executeSPresetToolCode(binding.code);
+    if (!toolDef) continue;
+
+    const toolId = `spreset_${toolDef.name}`;
+    shouldRegister.set(toolId, { toolDef, identifier, uuid: binding.uuid });
+  }
+
+  // 注销不再需要的工具
+  for (const [toolId, uuid] of spresetRegisteredTools) {
+    if (!shouldRegister.has(toolId) || shouldRegister.get(toolId).uuid !== uuid) {
+      try { unregisterFunctionTool(toolId); } catch (e) { /* ignore */ }
+      spresetRegisteredTools.delete(toolId);
+    }
+  }
+
+  // 注册新的 / uuid 变化的工具
+  for (const [toolId, { toolDef, identifier, uuid }] of shouldRegister) {
+    if (spresetRegisteredTools.has(toolId) && spresetRegisteredTools.get(toolId) === uuid) {
+      continue;
+    }
+    try {
+      if (spresetRegisteredTools.has(toolId)) {
+        unregisterFunctionTool(toolId);
+      }
+      registerFunctionTool({
+        name: toolId,
+        displayName: toolDef.displayName || toolDef.name,
+        description: toolDef.description,
+        parameters: toolDef.parameters,
+        action: toolDef.action,
+        formatMessage: toolDef.formatMessage,
+        stealth: toolDef.stealth ?? false,
+        shouldRegister: () => getActiveEntryIdentifiers().has(identifier),
+      });
+      spresetRegisteredTools.set(toolId, uuid);
+      console.log(`[SPreset-ToolBinding] 已注册工具: ${toolId} (来自 ${identifier})`);
+    } catch (e) {
+      console.error(`[SPreset-ToolBinding] 注册工具 ${toolId} 失败:`, e);
+    }
+  }
+}
+
 function getPrompt(identifier) {
   const oai_settings = ctx.chatCompletionSettings;
   const prompts = oai_settings.prompts;
