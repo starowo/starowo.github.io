@@ -456,6 +456,65 @@ body.is-dragging {
   transition: none;
 }
 
+/* ============================================================================
+   工具绑定样式
+   ============================================================================ */
+
+.tool-binding-section {
+  margin-top: 8px;
+}
+
+.tool-binding-header {
+  padding: 4px 0;
+}
+
+.tool-binding-header:hover .tool-binding-chevron {
+  color: #6366f1;
+}
+
+.tool-binding-chevron {
+  transition: transform 0.2s ease;
+}
+
+.tool-binding-code {
+  font-size: 11px;
+  line-height: 1.5;
+  min-height: 120px;
+  max-height: 300px;
+  overflow-y: auto !important;
+  tab-size: 4;
+  -moz-tab-size: 4;
+  white-space: pre;
+}
+
+.tool-binding-toggle {
+  accent-color: #6366f1;
+}
+
+/* 深色模式 */
+body.dark-mode .tool-binding-section {
+  border-color: #334155;
+}
+
+body.dark-mode .tool-binding-code {
+  background-color: #020617 !important;
+  border-color: #475569 !important;
+  color: #f8fafc !important;
+}
+
+body.dark-mode .tool-binding-code:focus {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+body.dark-mode .tool-binding-header span {
+  color: #94a3b8;
+}
+
+body.dark-mode .tool-binding-header:hover .tool-binding-chevron {
+  color: #818cf8;
+}
+
 /* 移动端媒体查询 */
 @media (max-width: 768px) {
   /* 隐藏收藏夹区域 */
@@ -1700,6 +1759,126 @@ function checkMobile() {
 // 便捷引用 Store API
 const uuid = Store.generateId;
 
+// --- Tool Binding Helpers ---
+
+function getToolBindingForItem(identifier) {
+  try {
+    const api = window.top.window.SPresetToolBinding;
+    if (api) return api.getToolBinding(identifier);
+  } catch (e) { /* ignore */ }
+  return null;
+}
+
+function toolCodePlaceholder() {
+  return '// 代码必须返回包含 name, description, parameters, action 的对象\n// 例如:\nreturn {\n    name: "my_tool",\n    description: "工具描述",\n    parameters: {\n        type: "object",\n        properties: {\n            query: { type: "string", description: "参数描述" }\n        },\n        required: ["query"]\n    },\n    action: async (args) => {\n        return JSON.stringify({ result: args.query });\n    }\n};';
+}
+
+function createToolBindingHTML(item) {
+  const identifier = item.identifier || item.id;
+  const binding = getToolBindingForItem(identifier);
+  const hasBinding = binding && binding.code;
+  const isEnabled = binding ? binding.enabled : false;
+  const code = binding ? binding.code : '';
+  const isValid = binding ? binding.valid : false;
+
+  return `
+    <div class="tool-binding-section border-t border-slate-100 mt-2 pt-2">
+      <div class="tool-binding-header flex items-center justify-between cursor-pointer select-none"
+           onclick="event.stopPropagation(); toggleToolBindingPanel('${identifier}')">
+        <div class="flex items-center gap-1.5">
+          <span class="material-symbols-outlined text-[16px] text-slate-400 tool-binding-chevron"
+                id="tool-chevron-${identifier}">chevron_right</span>
+          <span class="material-symbols-outlined text-[14px] ${hasBinding && isEnabled ? 'text-indigo-500' : 'text-slate-400'}">build</span>
+          <span class="text-xs font-medium ${hasBinding && isEnabled ? 'text-indigo-600' : 'text-slate-500'}">工具绑定</span>
+          ${isValid ? '<span class="text-[10px] bg-green-100 text-green-700 px-1 py-0.5 rounded">有效</span>' : ''}
+          ${hasBinding && !isValid ? '<span class="text-[10px] bg-red-100 text-red-700 px-1 py-0.5 rounded">无效</span>' : ''}
+        </div>
+      </div>
+      <div class="tool-binding-panel" id="tool-panel-${identifier}" style="display: none;">
+        <div class="mt-2 flex flex-col gap-2">
+          <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer"
+                 onclick="event.stopPropagation()">
+            <input type="checkbox" ${isEnabled ? 'checked' : ''}
+                   class="tool-binding-toggle"
+                   data-identifier="${identifier}">
+            <span>启用工具函数</span>
+          </label>
+          <textarea class="tool-binding-code w-full text-xs font-mono text-slate-700 bg-slate-50 border border-slate-200 rounded p-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none"
+                    data-identifier="${identifier}"
+                    rows="8"
+                    spellcheck="false"
+                    onclick="event.stopPropagation()"
+                    placeholder="${escapeHtml(toolCodePlaceholder())}">${escapeHtml(code)}</textarea>
+          <div class="flex justify-between items-center">
+            <span class="tool-binding-status text-[10px]" id="tool-status-${identifier}"></span>
+            <button onclick="event.stopPropagation(); saveToolBinding('${identifier}')"
+                    class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-3 py-1 rounded transition-colors">
+              保存工具
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function toggleToolBindingPanel(identifier) {
+  const panel = document.getElementById('tool-panel-' + identifier);
+  const chevron = document.getElementById('tool-chevron-' + identifier);
+  if (!panel) return;
+
+  const isHidden = panel.style.display === 'none';
+  panel.style.display = isHidden ? 'block' : 'none';
+  if (chevron) {
+    chevron.style.transform = isHidden ? 'rotate(90deg)' : '';
+  }
+}
+
+function saveToolBinding(identifier) {
+  const panel = document.getElementById('tool-panel-' + identifier);
+  if (!panel) return;
+
+  const textarea = panel.querySelector('.tool-binding-code');
+  const toggle = panel.querySelector('.tool-binding-toggle');
+  const statusEl = document.getElementById('tool-status-' + identifier);
+
+  const code = textarea ? textarea.value : '';
+  const enabled = toggle ? toggle.checked : false;
+
+  try {
+    const api = window.top.window.SPresetToolBinding;
+    if (!api) {
+      showToast('未检测到 SillyTavern 环境');
+      return;
+    }
+
+    const validation = api.saveToolBinding(identifier, { enabled, code });
+
+    if (validation.valid) {
+      showToast('工具函数已保存，验证通过 ✓');
+      if (statusEl) {
+        statusEl.textContent = '✓ 验证通过';
+        statusEl.className = 'tool-binding-status text-[10px] text-green-600';
+      }
+    } else if (code.trim()) {
+      showToast('工具函数已保存，验证失败: ' + (validation.error || ''));
+      if (statusEl) {
+        statusEl.textContent = '✗ ' + (validation.error || '验证失败');
+        statusEl.className = 'tool-binding-status text-[10px] text-red-600';
+      }
+    } else {
+      showToast('工具函数已保存（代码为空）');
+      if (statusEl) {
+        statusEl.textContent = '';
+        statusEl.className = 'tool-binding-status text-[10px]';
+      }
+    }
+  } catch (e) {
+    console.error('[ToolBinding] 保存失败:', e);
+    showToast('保存失败: ' + e.message);
+  }
+}
+
 // --- Core Rendering Functions ---
 
 function init() {
@@ -2359,7 +2538,9 @@ function createItemHTML(item, zone, isCompact = false) {
                     `
                         : ''
                     }
-                    
+
+                    ${zone.startsWith('active') && !item.marker ? createToolBindingHTML(item) : ''}
+
                     <!-- 移动端便捷操作按钮 -->
                     <div class="mobile-actions">
                         <button onclick="event.stopPropagation(); moveItemUp('${item.id}')"
@@ -2524,6 +2705,8 @@ function createCompactItemHTML(item) {
                             }"
                             placeholder="提示词内容...">${item.content}</textarea>`
                         }
+
+                        ${!isMarker ? createToolBindingHTML(item) : ''}
 
                         <!-- Footer Controls -->
                         <div class="flex justify-between items-center border-t border-slate-100 pt-2">
@@ -3834,6 +4017,24 @@ setupIframeMode();
 
     // 移除不存在的prompt
     existingPrompts = existingPrompts.filter(p => allEditorItems.some(item => item.identifier === p.identifier));
+
+    // 清理孤立的工具绑定
+    try {
+      const api = window.top.window.SPresetToolBinding;
+      if (api) {
+        const allIdentifiers = new Set(allEditorItems.map(item => item.identifier || item.id));
+        const toolBindings = st.chatCompletionSettings?.extensions?.SPreset?.ToolBindings;
+        if (toolBindings) {
+          for (const identifier of Object.keys(toolBindings)) {
+            if (!allIdentifiers.has(identifier)) {
+              api.deleteToolBinding(identifier);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[ST Integration] 清理工具绑定失败:', e);
+    }
 
     allEditorItems.forEach(editorItem => {
       const identifier = editorItem.identifier || editorItem.id;
