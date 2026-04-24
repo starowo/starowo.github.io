@@ -19,6 +19,7 @@ let SPresetSettings = {
     squashed_separator_string: '',
     squashed_post_script_enable: false,
     squashed_post_script: '',
+    re_split: false,
   },
   MacroNest: false,
   ToolBindings: {},
@@ -621,6 +622,7 @@ function reloadSettings() {
       squashed_separator_string: '',
       squashed_post_script_enable: false,
       squashed_post_script: '',
+      re_split: false,
     },
     RegexBinding: {},
     MacroNest: false,
@@ -867,6 +869,9 @@ const ChatSquash = () => {
 
                 <hr>
             </div>
+            <div class="flex-container" title="合并后处理后，将提示词按前后缀重新拆分回不同角色的独立消息">
+                <input type="checkbox" id="re_split"><span>重新拆分提示词</span>
+            </div>
             <div class="flex-container flexFlowColumn">
                 <strong>后处理脚本</strong>
                 <div class="flex-container" title="启用后处理脚本">
@@ -920,6 +925,7 @@ const ChatSquash = () => {
     menu.find('#squashed_separator_string').val(SPresetSettings.ChatSquash.squashed_separator_string);
     menu.find('#squashed_post_script_enable').prop('checked', SPresetSettings.ChatSquash.squashed_post_script_enable);
     menu.find('#squashed_post_script').val(SPresetSettings.ChatSquash.squashed_post_script);
+    menu.find('#re_split').prop('checked', SPresetSettings.ChatSquash.re_split);
     menu.find('#squash_enabled_content').css({
       display: menu.find('#squash_enabled').prop('checked') ? 'block' : 'none',
     });
@@ -945,6 +951,7 @@ const ChatSquash = () => {
     SPresetSettings.ChatSquash.squashed_separator_string = menu.find('#squashed_separator_string').val();
     SPresetSettings.ChatSquash.squashed_post_script_enable = menu.find('#squashed_post_script_enable').prop('checked');
     SPresetSettings.ChatSquash.squashed_post_script = menu.find('#squashed_post_script').val();
+    SPresetSettings.ChatSquash.re_split = menu.find('#re_split').prop('checked');
     if (!ctx.chatCompletionSettings.extensions) {
       ctx.chatCompletionSettings.extensions = {};
     }
@@ -994,9 +1001,19 @@ const ChatSquash = () => {
 
   const handleChatCompletionPromptReady = data => {
     if (!SPresetSettings.ChatSquash.enabled) {
+      if (Array.isArray(data?.prompt)) {
+        globalThis.SToolBookPromptCompat?.applySeamlessPromptInjection?.(data.prompt, 'SPreset/GENERATE_AFTER_DATA/bypass');
+      }
       return;
     }
 
+    if (!Array.isArray(data?.prompt)) {
+      return;
+    }
+
+    const restoreSeamlessTail = () => {
+      globalThis.SToolBookPromptCompat?.applySeamlessPromptInjection?.(data.prompt, 'SPreset/GENERATE_AFTER_DATA');
+    };
     console.log('data', data);
     const settings = SPresetSettings.ChatSquash;
     const promptManager = SPresetImports.promptManager;
@@ -1094,7 +1111,7 @@ const ChatSquash = () => {
     const settings = SPresetSettings.ChatSquash;
     let squashRole = settings.role;
     if (settings.role === 'follow') {
-      squashRole = prompts[0].role;
+      squashRole = prompts[0]?.role || 'user';
     }
     const newPrompts = [...prompts];
     prompts.length = 0;
@@ -1103,8 +1120,80 @@ const ChatSquash = () => {
 
     const attachments = [];
 
+    // 预先解析前后缀，用于合并和可能的重新拆分
+    const resolveAffix = (prefix, suffix) => ({
+      prefix: ctx.substituteParams(prefix),
+      suffix: ctx.substituteParams(suffix),
+    });
+    const affix = {
+      user: resolveAffix(settings.user_prefix, settings.user_suffix),
+      assistant: resolveAffix(settings.char_prefix, settings.char_suffix),
+      system: resolveAffix(settings.prefix_system, settings.suffix_system),
+    };
+    const segmentRoles = [];
+
+    function pushMergedContent() {
+      const processed = postProcess(mergedContent);
+      if (settings.re_split && segmentRoles.length > 0) {
+        const splitMsgs = reSplitContent(processed, segmentRoles, affix);
+        for (const msg of splitMsgs) {
+          prompts.push({
+            role: msg.role,
+            content: restoreAttachments(msg.content, attachments),
+          });
+        }
+      } else {
+        prompts.push({
+          role: squashRole,
+          content: restoreAttachments(processed, attachments),
+        });
+      }
+      mergedContent = '';
+      segmentRoles.length = 0;
+    }
+
+    function reSplitContent(content, roles, affix) {
+      const result = [];
+      let remaining = content;
+
+      for (let i = 0; i < roles.length; i++) {
+        const role = roles[i];
+        const { prefix, suffix } = affix[role];
+
+        if (prefix && remaining.startsWith(prefix)) {
+          remaining = remaining.slice(prefix.length);
+        }
+
+        let endIdx = remaining.length;
+        if (i < roles.length - 1) {
+          const nextPrefix = affix[roles[i + 1]].prefix;
+          if (nextPrefix) {
+            const idx = remaining.indexOf(nextPrefix);
+            if (idx !== -1) {
+              endIdx = idx;
+            }
+          }
+        }
+
+        let segmentContent = remaining.slice(0, endIdx);
+
+        if (suffix && segmentContent.endsWith(suffix)) {
+          segmentContent = segmentContent.slice(0, -suffix.length);
+        }
+
+        segmentContent = segmentContent.trim();
+        if (segmentContent) {
+          result.push({ role, content: segmentContent });
+        }
+
+        remaining = remaining.slice(endIdx);
+      }
+
+      return result;
+    }
+
     for (const prompt of newPrompts) {
-      if (!prompt.content) {
+      if (!prompt.content && !prompt.tool_calls) {
         continue;
       }
       if (Array.isArray(prompt.content)) {
@@ -1142,55 +1231,26 @@ const ChatSquash = () => {
           prompt.content = prompt.content.replace(marker, '');
         }
       }
+      if (prompt.tool_calls || prompt.role === 'tool') {
+        separate = true;
+      }
       if (separate) {
         if (mergedContent) {
-          switch (lastRole) {
-            case 'system':
-              mergedContent += ctx.substituteParams(settings.suffix_system);
-              break;
-            case 'user':
-              mergedContent += ctx.substituteParams(settings.user_suffix);
-              break;
-            case 'assistant':
-              mergedContent += ctx.substituteParams(settings.char_suffix);
-              break;
-          }
-          prompts.push({
-            role: squashRole,
-            content: restoreAttachments(postProcess(mergedContent), attachments),
-          });
+          pushMergedContent();
         }
         if (settings.role === 'follow') {
           squashRole = prompt.role;
         }
-        mergedContent = '';
         lastRole = '';
         prompts.push(prompt);
         continue;
       }
       if (prompt.role !== lastRole) {
-        switch (lastRole) {
-          case 'system':
-            mergedContent += ctx.substituteParams(settings.suffix_system);
-            break;
-          case 'user':
-            mergedContent += ctx.substituteParams(settings.user_suffix);
-            break;
-          case 'assistant':
-            mergedContent += ctx.substituteParams(settings.char_suffix);
-            break;
+        if (lastRole) {
+          mergedContent += affix[lastRole].suffix;
         }
-        switch (prompt.role) {
-          case 'system':
-            mergedContent += ctx.substituteParams(settings.prefix_system);
-            break;
-          case 'user':
-            mergedContent += ctx.substituteParams(settings.user_prefix);
-            break;
-          case 'assistant':
-            mergedContent += ctx.substituteParams(settings.char_prefix);
-            break;
-        }
+        mergedContent += affix[prompt.role].prefix;
+        segmentRoles.push(prompt.role);
       } else {
         mergedContent += '\n';
       }
@@ -1198,21 +1258,10 @@ const ChatSquash = () => {
       lastRole = prompt.role;
     }
     if (mergedContent) {
-      switch (lastRole) {
-        case 'system':
-          mergedContent += ctx.substituteParams(settings.suffix_system);
-          break;
-        case 'user':
-          mergedContent += ctx.substituteParams(settings.user_suffix);
-          break;
-        case 'assistant':
-          mergedContent += ctx.substituteParams(settings.char_suffix);
-          break;
+      if (lastRole) {
+        mergedContent += affix[lastRole].suffix;
       }
-      prompts.push({
-        role: squashRole,
-        content: restoreAttachments(postProcess(mergedContent), attachments),
-      });
+      pushMergedContent();
     }
     return prompts;
   }
