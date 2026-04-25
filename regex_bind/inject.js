@@ -3225,7 +3225,7 @@ function syncSPresetToolRegistrations() {
     const toolDef = executeSPresetToolCode(binding.code);
     if (!toolDef) continue;
 
-    const toolId = `spreset_${toolDef.name}`;
+    const toolId = `${toolDef.name}`;
     shouldRegister.set(toolId, { toolDef, identifier, uuid: binding.uuid });
   }
 
