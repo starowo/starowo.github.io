@@ -1135,7 +1135,7 @@ const ChatSquash = () => {
     function pushMergedContent() {
       const processed = postProcess(mergedContent);
       if (settings.re_split && segmentRoles.length > 0) {
-        const splitMsgs = reSplitContent(processed, segmentRoles, affix);
+        const splitMsgs = reSplitContent(processed, affix);
         for (const msg of splitMsgs) {
           prompts.push({
             role: msg.role,
@@ -1152,24 +1152,35 @@ const ChatSquash = () => {
       segmentRoles.length = 0;
     }
 
-    function reSplitContent(content, roles, affix) {
+    function reSplitContent(content, affix) {
       const result = [];
       let remaining = content;
+      const roles = ['user', 'assistant', 'system'];
 
-      for (let i = 0; i < roles.length; i++) {
-        const role = roles[i];
-        const { prefix, suffix } = affix[role];
+      while (remaining.length > 0) {
+        let matchedRole = null;
 
-        if (prefix && remaining.startsWith(prefix)) {
-          remaining = remaining.slice(prefix.length);
+        for (const role of roles) {
+          const { prefix } = affix[role];
+          if (prefix && remaining.startsWith(prefix)) {
+            matchedRole = role;
+            remaining = remaining.slice(prefix.length);
+            break;
+          }
         }
 
+        if (!matchedRole) {
+          break;
+        }
+
+        const { suffix } = affix[matchedRole];
         let endIdx = remaining.length;
-        if (i < roles.length - 1) {
-          const nextPrefix = affix[roles[i + 1]].prefix;
+
+        for (const role of roles) {
+          const nextPrefix = affix[role].prefix;
           if (nextPrefix) {
             const idx = remaining.indexOf(nextPrefix);
-            if (idx !== -1) {
+            if (idx !== -1 && idx < endIdx) {
               endIdx = idx;
             }
           }
@@ -1183,7 +1194,7 @@ const ChatSquash = () => {
 
         segmentContent = segmentContent.trim();
         if (segmentContent) {
-          result.push({ role, content: segmentContent });
+          result.push({ role: matchedRole, content: segmentContent });
         }
 
         remaining = remaining.slice(endIdx);
@@ -3225,7 +3236,7 @@ function syncSPresetToolRegistrations() {
     const toolDef = executeSPresetToolCode(binding.code);
     if (!toolDef) continue;
 
-    const toolId = `${toolDef.name}`;
+    const toolId = `spreset_${toolDef.name}`;
     shouldRegister.set(toolId, { toolDef, identifier, uuid: binding.uuid });
   }
 
