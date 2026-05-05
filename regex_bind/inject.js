@@ -381,7 +381,7 @@ $(async () => {
     });
   importFromModule('SPresetImports', [
     {
-      items: ['promptManager', 'MessageCollection', 'Message'],
+      items: ['promptManager', 'MessageCollection', 'Message', "sendOpenAIRequest"],
       from: './scripts/openai',
     },
   ]);
