@@ -2,6 +2,8 @@ let SPresetSettings = {
   RegexBinding: {},
   ChatSquash: {
     enabled: false,
+    conditional_enabled: false,
+    conditional_tag: '',
     separate_chat_history: false,
     parse_clewd: true,
     user_role_system: false,
@@ -759,6 +761,16 @@ const ChatSquash = () => {
 			</label>
       <div id="squash_enabled_content" style="display: none;">
 
+            <div class="flex-container" title="仅当提示词中包含目标 Tag 时启用合并，并从提示词中删除该 Tag">
+                <input type="checkbox" id="squash_conditional_enabled"><span>按 Tag 条件启用</span>
+            </div>
+            <div class="flex-container flexFlowColumn" title="用于触发提示词合并的 Tag（按原样匹配）">
+                <label for="squash_conditional_tag">目标 Tag</label>
+                <input id="squash_conditional_tag" class="text_pole flex1 wide100p" maxlength="500" size="35" type="text" autocomplete="off" placeholder="例如：<merge>">
+            </div>
+
+            <hr>
+
             <div class="flex-container" title="仅合并聊天记录">
                 <input type="checkbox" id="separate_chat_history"><span>仅合并聊天记录</span>
             </div>
@@ -908,6 +920,8 @@ const ChatSquash = () => {
   function loadSettingsToForm() {
     console.debug('loadSettingsToForm');
     menu.find('#squash_enabled').prop('checked', SPresetSettings.ChatSquash.enabled);
+    menu.find('#squash_conditional_enabled').prop('checked', SPresetSettings.ChatSquash.conditional_enabled);
+    menu.find('#squash_conditional_tag').val(SPresetSettings.ChatSquash.conditional_tag);
     menu.find('#separate_chat_history').prop('checked', SPresetSettings.ChatSquash.separate_chat_history);
     menu.find('#parse_clewd').prop('checked', SPresetSettings.ChatSquash.parse_clewd);
     menu.find('#user_role_system').prop('checked', SPresetSettings.ChatSquash.user_role_system);
@@ -934,6 +948,8 @@ const ChatSquash = () => {
   function saveSettingsFromForm() {
     console.debug('saveSettingsFromForm');
     SPresetSettings.ChatSquash.enabled = menu.find('#squash_enabled').prop('checked');
+    SPresetSettings.ChatSquash.conditional_enabled = menu.find('#squash_conditional_enabled').prop('checked');
+    SPresetSettings.ChatSquash.conditional_tag = menu.find('#squash_conditional_tag').val();
     SPresetSettings.ChatSquash.separate_chat_history = menu.find('#separate_chat_history').prop('checked');
     SPresetSettings.ChatSquash.parse_clewd = menu.find('#parse_clewd').prop('checked');
     SPresetSettings.ChatSquash.user_role_system = menu.find('#user_role_system').prop('checked');
@@ -1011,6 +1027,14 @@ const ChatSquash = () => {
       return;
     }
 
+    if (!consumeConditionalTag(data.prompt)) {
+      globalThis.SToolBookPromptCompat?.applySeamlessPromptInjection?.(
+        data.prompt,
+        'SPreset/GENERATE_AFTER_DATA/conditional-bypass',
+      );
+      return;
+    }
+
     const restoreSeamlessTail = () => {
       globalThis.SToolBookPromptCompat?.applySeamlessPromptInjection?.(data.prompt, 'SPreset/GENERATE_AFTER_DATA');
     };
@@ -1020,6 +1044,7 @@ const ChatSquash = () => {
     if (settings.separate_chat_history) {
       data.prompt.length = 0;
       data.prompt.push(...getChat(promptManager));
+      consumeConditionalTag(data.prompt);
       console.log('data.prompt', data.prompt);
     } else {
       squashPrompts(data.prompt);
@@ -1059,6 +1084,43 @@ const ChatSquash = () => {
       return chat;
     }
   };
+
+  function consumeConditionalTag(prompts) {
+    const settings = SPresetSettings.ChatSquash;
+    if (!settings.conditional_enabled) {
+      return true;
+    }
+
+    const tag = String(settings.conditional_tag || '');
+    if (!tag) {
+      return false;
+    }
+
+    let matched = false;
+    const removeTag = value => {
+      if (typeof value === 'string') {
+        if (!value.includes(tag)) return value;
+        matched = true;
+        return value.split(tag).join('');
+      }
+      if (Array.isArray(value)) {
+        return value.map(removeTag);
+      }
+      if (value && typeof value === 'object') {
+        for (const key of Object.keys(value)) {
+          value[key] = removeTag(value[key]);
+        }
+      }
+      return value;
+    };
+
+    for (const prompt of prompts) {
+      if (prompt && Object.prototype.hasOwnProperty.call(prompt, 'content')) {
+        prompt.content = removeTag(prompt.content);
+      }
+    }
+    return matched;
+  }
 
   ctx.eventSource.on(ctx.eventTypes.APP_READY, data => {
     console.log('APP_READY', data);
