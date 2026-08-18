@@ -515,6 +515,68 @@ body.dark-mode .tool-binding-header:hover .tool-binding-chevron {
   color: #818cf8;
 }
 
+/* ============================================================================
+   结构化消息样式
+   ============================================================================ */
+
+.message-injection-section {
+  margin-top: 8px;
+}
+
+.message-injection-header {
+  padding: 4px 0;
+}
+
+.message-injection-chevron {
+  transition: transform 0.2s ease;
+}
+
+.message-injection-header:hover .message-injection-chevron {
+  color: #7c3aed;
+}
+
+.message-injection-input {
+  line-height: 1.5;
+  overflow-y: auto !important;
+  tab-size: 2;
+  -moz-tab-size: 2;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.message-injection-toggle {
+  accent-color: #7c3aed;
+}
+
+body.dark-mode .message-injection-section {
+  border-color: #334155;
+}
+
+body.dark-mode .message-injection-input {
+  background-color: #020617 !important;
+  border-color: #475569 !important;
+  color: #f8fafc !important;
+}
+
+body.dark-mode .message-injection-input:focus {
+  border-color: #8b5cf6 !important;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+}
+
+body.dark-mode .message-injection-header span,
+body.dark-mode .message-injection-panel label,
+body.dark-mode .message-injection-panel > div > div {
+  color: #94a3b8;
+}
+
+body.dark-mode .message-injection-panel .message-provider-label {
+  color: #c4b5fd;
+}
+
+body.dark-mode .message-injection-panel .message-provider-detail {
+  color: #94a3b8;
+}
+
 /* 移动端媒体查询 */
 @media (max-width: 768px) {
   /* 隐藏收藏夹区域 */
@@ -1879,6 +1941,175 @@ function saveToolBinding(identifier) {
   }
 }
 
+// --- Structured Message Helpers ---
+
+function getMessageInjectionApi() {
+  try {
+    return window.top.window.SPresetMessageInjection || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function getMessageInjectionForItem(identifier) {
+  return getMessageInjectionApi()?.getMessageInjection(identifier) || null;
+}
+
+function getCurrentMessageProvider() {
+  return getMessageInjectionApi()?.getCurrentProvider() || {
+    label: '等待 SillyTavern provider',
+    detail: '发送时会根据当前 provider 自动转换。',
+  };
+}
+
+function toInlineString(value) {
+  return escapeHtml(JSON.stringify(String(value ?? '')).replaceAll('<', '\\u003c'));
+}
+
+function formatMessageJson(value) {
+  return escapeHtml(JSON.stringify(Array.isArray(value) ? value : [], null, 2));
+}
+
+function createMessageInjectionHTML(item) {
+  const identifier = String(item.identifier || item.id);
+  const binding = getMessageInjectionForItem(identifier) || {};
+  const provider = getCurrentMessageProvider();
+  const toolCalls = Array.isArray(binding.toolCalls) ? binding.toolCalls : [];
+  const toolResults = Array.isArray(binding.toolResults) ? binding.toolResults : [];
+  const hasData = Boolean(binding.reasoning || binding.signature || toolCalls.length || toolResults.length);
+  const isActive = Boolean(binding.enabled && hasData);
+  const inlineIdentifier = toInlineString(identifier);
+
+  return `
+    <div class="message-injection-section border-t border-slate-100 mt-2 pt-2">
+      <div class="message-injection-header flex items-center justify-between cursor-pointer select-none"
+           onclick="event.stopPropagation(); toggleMessageInjectionPanel(${inlineIdentifier})">
+        <div class="flex items-center gap-1.5">
+          <span class="material-symbols-outlined text-[16px] text-slate-400 message-injection-chevron"
+                id="message-chevron-${escapeHtml(identifier)}">chevron_right</span>
+          <span class="material-symbols-outlined text-[14px] ${isActive ? 'text-violet-500' : 'text-slate-400'}">account_tree</span>
+          <span class="text-xs font-medium ${isActive ? 'text-violet-600' : 'text-slate-500'}">结构化消息</span>
+          ${toolCalls.length ? `<span class="text-[10px] bg-violet-100 text-violet-700 px-1 py-0.5 rounded">调用 ${toolCalls.length}</span>` : ''}
+          ${toolResults.length ? `<span class="text-[10px] bg-sky-100 text-sky-700 px-1 py-0.5 rounded">返回 ${toolResults.length}</span>` : ''}
+        </div>
+        <span class="text-[10px] text-slate-400">自动适配 provider</span>
+      </div>
+      <div class="message-injection-panel" id="message-panel-${escapeHtml(identifier)}" style="display: none;"
+           onclick="event.stopPropagation()" onpointerdown="event.stopPropagation()">
+        <div class="mt-2 flex flex-col gap-2">
+          <div class="rounded border border-violet-100 bg-violet-50/60 px-2 py-1.5">
+            <div class="message-provider-label text-[11px] font-medium text-violet-700"
+                 id="message-provider-label-${escapeHtml(identifier)}">当前：${escapeHtml(provider.label)}</div>
+            <div class="message-provider-detail text-[10px] leading-4 text-slate-500"
+                 id="message-provider-detail-${escapeHtml(identifier)}">${escapeHtml(provider.detail)}</div>
+          </div>
+          <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+            <input type="checkbox" class="message-injection-toggle" ${binding.enabled ? 'checked' : ''}>
+            <span>发送时注入本条结构化数据</span>
+          </label>
+          <label class="text-[11px] font-medium text-slate-600">思维链 / reasoning</label>
+          <textarea class="message-injection-reasoning message-injection-input w-full rounded border border-slate-200 bg-white p-2 font-mono text-[11px] resize-y"
+                    rows="3" spellcheck="false"
+                    placeholder="Claude 需与签名成对；DeepSeek 使用 reasoning_content；OpenRouter 使用 reasoning。">${escapeHtml(binding.reasoning || '')}</textarea>
+          <label class="text-[11px] font-medium text-slate-600">思维链签名</label>
+          <textarea class="message-injection-signature message-injection-input w-full rounded border border-slate-200 bg-white p-2 font-mono text-[11px] resize-y"
+                    rows="2" spellcheck="false"
+                    placeholder="原样填写 provider 返回的签名；Gemini 工具调用会回退使用此签名。">${escapeHtml(binding.signature || '')}</textarea>
+          <label class="text-[11px] font-medium text-slate-600">工具调用（JSON 数组）</label>
+          <textarea class="message-injection-tool-calls message-injection-input w-full rounded border border-slate-200 bg-white p-2 font-mono text-[11px] resize-y"
+                    rows="6" spellcheck="false"
+                    placeholder='[{"id":"call_1","name":"search","arguments":{"query":"..."},"signature":"可选"}]'>${formatMessageJson(toolCalls)}</textarea>
+          <label class="text-[11px] font-medium text-slate-600">工具返回（JSON 数组）</label>
+          <textarea class="message-injection-tool-results message-injection-input w-full rounded border border-slate-200 bg-white p-2 font-mono text-[11px] resize-y"
+                    rows="5" spellcheck="false"
+                    placeholder='[{"toolCallId":"call_1","name":"search","content":{"ok":true},"isError":false}]'>${formatMessageJson(toolResults)}</textarea>
+          <div class="text-[10px] leading-4 text-slate-400">
+            思维链、签名和调用属于 assistant；工具返回紧跟其后。不受当前 provider 支持的字段只保存、不发送。
+          </div>
+          <div class="flex justify-between items-center gap-2">
+            <span class="message-injection-status text-[10px]" id="message-status-${escapeHtml(identifier)}"></span>
+            <div class="flex gap-2">
+              <button onclick="event.stopPropagation(); clearMessageInjection(${inlineIdentifier})"
+                      class="border border-slate-200 text-slate-500 hover:bg-slate-50 text-xs px-3 py-1 rounded transition-colors">清除</button>
+              <button onclick="event.stopPropagation(); saveMessageInjection(${inlineIdentifier})"
+                      class="bg-violet-600 hover:bg-violet-700 text-white text-xs px-3 py-1 rounded transition-colors">保存结构化消息</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function setMessageInjectionStatus(identifier, message, valid) {
+  const status = document.getElementById('message-status-' + identifier);
+  if (!status) return;
+  status.textContent = message;
+  status.className = `message-injection-status text-[10px] ${valid ? 'text-green-600' : 'text-red-600'}`;
+}
+
+function toggleMessageInjectionPanel(identifier) {
+  const panel = document.getElementById('message-panel-' + identifier);
+  const chevron = document.getElementById('message-chevron-' + identifier);
+  if (!panel) return;
+
+  const provider = getCurrentMessageProvider();
+  const providerLabel = document.getElementById('message-provider-label-' + identifier);
+  const providerDetail = document.getElementById('message-provider-detail-' + identifier);
+  if (providerLabel) providerLabel.textContent = '当前：' + provider.label;
+  if (providerDetail) providerDetail.textContent = provider.detail;
+
+  const isHidden = panel.style.display === 'none';
+  panel.style.display = isHidden ? 'block' : 'none';
+  if (chevron) chevron.style.transform = isHidden ? 'rotate(90deg)' : '';
+}
+
+function readMessageJsonArray(panel, selector, label) {
+  const raw = panel.querySelector(selector)?.value?.trim() || '[]';
+  const value = JSON.parse(raw);
+  if (!Array.isArray(value)) throw new Error(label + '必须是 JSON 数组');
+  return value;
+}
+
+function saveMessageInjection(identifier) {
+  const panel = document.getElementById('message-panel-' + identifier);
+  const api = getMessageInjectionApi();
+  if (!panel || !api) {
+    showToast('未检测到 SPreset 结构化消息接口');
+    return;
+  }
+
+  try {
+    const result = api.saveMessageInjection(identifier, {
+      enabled: panel.querySelector('.message-injection-toggle')?.checked ?? false,
+      reasoning: panel.querySelector('.message-injection-reasoning')?.value || '',
+      signature: panel.querySelector('.message-injection-signature')?.value || '',
+      toolCalls: readMessageJsonArray(panel, '.message-injection-tool-calls', '工具调用'),
+      toolResults: readMessageJsonArray(panel, '.message-injection-tool-results', '工具返回'),
+    });
+    if (!result.valid) throw new Error(result.errors.join('；'));
+    setMessageInjectionStatus(identifier, '✓ 已保存', true);
+    showToast('结构化消息已保存 ✓');
+  } catch (e) {
+    console.error('[MessageInjection] 保存失败:', e);
+    setMessageInjectionStatus(identifier, '✗ ' + (e.message || String(e)), false);
+    showToast('结构化消息保存失败: ' + (e.message || String(e)));
+  }
+}
+
+function clearMessageInjection(identifier) {
+  const panel = document.getElementById('message-panel-' + identifier);
+  const api = getMessageInjectionApi();
+  if (!panel || !api) return;
+  api.deleteMessageInjection(identifier);
+  panel.querySelector('.message-injection-toggle').checked = false;
+  panel.querySelector('.message-injection-reasoning').value = '';
+  panel.querySelector('.message-injection-signature').value = '';
+  panel.querySelector('.message-injection-tool-calls').value = '[]';
+  panel.querySelector('.message-injection-tool-results').value = '[]';
+  setMessageInjectionStatus(identifier, '✓ 已清除', true);
+  showToast('结构化消息已清除');
+}
+
 // --- Core Rendering Functions ---
 
 function init() {
@@ -2539,7 +2770,11 @@ function createItemHTML(item, zone, isCompact = false) {
                         : ''
                     }
 
-                    ${zone.startsWith('active') && !item.marker ? createToolBindingHTML(item) : ''}
+                    ${
+                      zone.startsWith('active') && !item.marker
+                        ? createToolBindingHTML(item) + createMessageInjectionHTML(item)
+                        : ''
+                    }
 
                     <!-- 移动端便捷操作按钮 -->
                     <div class="mobile-actions">
@@ -2707,6 +2942,7 @@ function createCompactItemHTML(item) {
                         }
 
                         ${!isMarker ? createToolBindingHTML(item) : ''}
+                        ${!isMarker ? createMessageInjectionHTML(item) : ''}
 
                         <!-- Footer Controls -->
                         <div class="flex justify-between items-center border-t border-slate-100 pt-2">
@@ -4034,6 +4270,24 @@ setupIframeMode();
       }
     } catch (e) {
       console.warn('[ST Integration] 清理工具绑定失败:', e);
+    }
+
+    // 清理孤立的结构化消息配置
+    try {
+      const api = window.top.window.SPresetMessageInjection;
+      if (api) {
+        const allIdentifiers = new Set(allEditorItems.map(item => item.identifier || item.id));
+        const messageInjections = st.chatCompletionSettings?.extensions?.SPreset?.MessageInjections;
+        if (messageInjections) {
+          for (const identifier of Object.keys(messageInjections)) {
+            if (!allIdentifiers.has(identifier)) {
+              api.deleteMessageInjection(identifier);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[ST Integration] 清理结构化消息配置失败:', e);
     }
 
     allEditorItems.forEach(editorItem => {

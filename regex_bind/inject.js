@@ -25,12 +25,14 @@ let SPresetSettings = {
   },
   MacroNest: false,
   ToolBindings: {},
+  MessageInjections: {},
 };
 
 window.SPresetTempData = {};
 
 // Tool binding management state
 const spresetRegisteredTools = new Map(); // toolId -> uuid
+const SPRESET_EMPTY_MESSAGE_PLACEHOLDER = '\u200b';
 
 window.versionNumber = 10000;
 
@@ -108,10 +110,384 @@ function importFromModule(container, imports) {
   injectScriptRaw(container + '_imports', injectContent);
 }
 
+function persistSPresetSettings() {
+  if (!ctx.chatCompletionSettings.extensions) {
+    ctx.chatCompletionSettings.extensions = {};
+  }
+  ctx.chatCompletionSettings.extensions.SPreset = SPresetSettings;
+  const serialized = JSON.stringify(SPresetSettings);
+  if (getPrompt('SPresetSettings')) {
+    setPrompt('SPresetSettings', serialized);
+  } else {
+    addPrompt('SPresetSettings', 'SPreset配置', serialized);
+  }
+  ctx.saveSettingsDebounced();
+}
+
+function cloneSPresetData(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
+function getSPresetCurrentProvider() {
+  const settings = ctx.chatCompletionSettings || {};
+  const source = String(settings.chat_completion_source || 'openai').toLowerCase();
+  const modelKeys = {
+    claude: 'claude_model',
+    openai: 'openai_model',
+    makersuite: 'google_model',
+    vertexai: 'vertexai_model',
+    openrouter: 'openrouter_model',
+    deepseek: 'deepseek_model',
+    custom: 'custom_model',
+    xai: 'xai_model',
+    mistralai: 'mistralai_model',
+    groq: 'groq_model',
+    electronhub: 'electronhub_model',
+    chutes: 'chutes_model',
+    nanogpt: 'nanogpt_model',
+    aimlapi: 'aimlapi_model',
+    siliconflow: 'siliconflow_model',
+    moonshot: 'moonshot_model',
+    zai: 'zai_model',
+  };
+  const model = String(settings[modelKeys[source]] || '');
+
+  if (source === 'makersuite' || source === 'vertexai') {
+    return {
+      adapter: 'gemini', source, model,
+      label: `Gemini 原生${model ? ` · ${model}` : ''}`,
+      detail: '签名转为 thoughtSignature，调用/返回转为 functionCall/functionResponse；当前酒馆转换器不会把手写 reasoning 文本标记为 thought part。',
+    };
+  }
+  if (source === 'claude') {
+    return {
+      adapter: 'claude', source, model,
+      label: `Claude 原生${model ? ` · ${model}` : ''}`,
+      detail: 'reasoning + 签名成对转换为 thinking block，工具转换为 tool_use / tool_result。',
+    };
+  }
+  if (source === 'openrouter') {
+    return {
+      adapter: 'openrouter', source, model,
+      label: `OpenRouter${model ? ` · ${model}` : ''}`,
+      detail: '使用 reasoning、tool_calls / tool，并让酒馆按具体模型把签名转换为 reasoning_details。',
+    };
+  }
+  if (source === 'deepseek') {
+    return {
+      adapter: 'deepseek', source, model,
+      label: `DeepSeek${model ? ` · ${model}` : ''}`,
+      detail: '思维链转换为 reasoning_content，工具使用 OpenAI tool_calls / tool 格式；签名字段省略。',
+    };
+  }
+  return {
+    adapter: 'openai', source, model,
+    label: `${source || 'OpenAI-compatible'}${model ? ` · ${model}` : ''}`,
+    detail: '使用 OpenAI tool_calls / tool 格式；为避免 provider 拒绝未知字段，思维链和签名只保存、不发送。',
+  };
+}
+
+function validateSPresetMessageInjection(data) {
+  const errors = [];
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return { valid: false, errors: ['结构化消息必须是对象'] };
+  }
+  if (!Array.isArray(data.toolCalls)) errors.push('工具调用必须是数组');
+  if (!Array.isArray(data.toolResults)) errors.push('工具返回必须是数组');
+
+  const ids = new Set();
+  if (Array.isArray(data.toolCalls)) {
+    data.toolCalls.forEach((call, index) => {
+      if (!call || typeof call !== 'object' || Array.isArray(call)) {
+        errors.push(`工具调用 #${index + 1} 必须是对象`);
+        return;
+      }
+      const id = String(call.id || '').trim();
+      const name = String(call.name || call.function?.name || '').trim();
+      if (!id) errors.push(`工具调用 #${index + 1} 缺少 id`);
+      if (id && ids.has(id)) errors.push(`工具调用 id 重复：${id}`);
+      if (id) ids.add(id);
+      if (!name) errors.push(`工具调用 #${index + 1} 缺少 name`);
+      try {
+        const args = call.arguments ?? call.function?.arguments ?? {};
+        const parsed = typeof args === 'string' ? JSON.parse(args || '{}') : args;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          errors.push(`工具调用 #${index + 1} 的 arguments 必须是 JSON 对象`);
+        }
+      } catch (error) {
+        errors.push(`工具调用 #${index + 1} 的 arguments 不是合法 JSON：${error.message}`);
+      }
+    });
+  }
+
+  if (Array.isArray(data.toolResults)) {
+    data.toolResults.forEach((result, index) => {
+      if (!result || typeof result !== 'object' || Array.isArray(result)) {
+        errors.push(`工具返回 #${index + 1} 必须是对象`);
+        return;
+      }
+      if (!String(result.toolCallId || result.tool_call_id || '').trim()) {
+        errors.push(`工具返回 #${index + 1} 缺少 toolCallId`);
+      }
+    });
+  }
+  return { valid: errors.length === 0, errors };
+}
+
+function normalizeSPresetMessageInjection(data) {
+  const toArgumentsObject = call => {
+    const args = call.arguments ?? call.function?.arguments ?? {};
+    return typeof args === 'string' ? JSON.parse(args || '{}') : cloneSPresetData(args);
+  };
+  return {
+    enabled: Boolean(data.enabled),
+    reasoning: String(data.reasoning ?? ''),
+    signature: String(data.signature ?? ''),
+    toolCalls: data.toolCalls.map(call => ({
+      id: String(call.id).trim(),
+      name: String(call.name || call.function?.name).trim(),
+      arguments: toArgumentsObject(call),
+      signature: String(call.signature ?? ''),
+    })),
+    toolResults: data.toolResults.map(result => ({
+      toolCallId: String(result.toolCallId || result.tool_call_id).trim(),
+      name: String(result.name ?? '').trim(),
+      content: cloneSPresetData(Object.prototype.hasOwnProperty.call(result, 'content') ? result.content : ''),
+      isError: Boolean(result.isError ?? result.is_error),
+    })),
+  };
+}
+
+function stringifySPresetMessageValue(value) {
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value === undefined ? '' : value);
+  } catch {
+    return String(value === undefined ? '' : value);
+  }
+}
+
+function ensureSPresetStructuredMessageContent(prompt) {
+  const binding = SPresetSettings.MessageInjections?.[prompt?.identifier];
+  const hasStructuredData = binding?.enabled && Boolean(
+    binding.reasoning
+    || binding.signature
+    || binding.toolCalls?.length
+    || binding.toolResults?.length,
+  );
+  if (hasStructuredData && !prompt.content) prompt.content = SPRESET_EMPTY_MESSAGE_PLACEHOLDER;
+  return prompt;
+}
+
+function buildSPresetGenericToolCalls(config, provider) {
+  const canUseTopLevelToolSignature = provider.adapter === 'gemini'
+    || (provider.adapter === 'openrouter' && /google\/gemini/i.test(provider.model || ''));
+  return config.toolCalls.map((call, index) => {
+    const signature = call.signature || (canUseTopLevelToolSignature && index === 0 ? config.signature : '');
+    return {
+      id: call.id,
+      type: 'function',
+      function: {
+        name: call.name,
+        arguments: JSON.stringify(call.arguments ?? {}),
+      },
+      ...(signature ? { signature } : {}),
+    };
+  });
+}
+
+function applySPresetMessageInjection(baseMessage, config, provider = getSPresetCurrentProvider()) {
+  const result = [];
+  const toolCalls = buildSPresetGenericToolCalls(config, provider);
+  const message = { ...baseMessage };
+  const hadEmptyPlaceholder = baseMessage.content === SPRESET_EMPTY_MESSAGE_PLACEHOLDER;
+  if (hadEmptyPlaceholder) message.content = '';
+  const hasClaudeThinking = provider.adapter === 'claude' && Boolean(config.reasoning && config.signature);
+  const hasAssistantMetadata = toolCalls.length > 0
+    || (provider.adapter === 'claude' && hasClaudeThinking)
+    || (provider.adapter === 'gemini' && Boolean(config.reasoning || config.signature))
+    || (provider.adapter === 'openrouter' && Boolean(config.reasoning || config.signature))
+    || (provider.adapter === 'deepseek' && Boolean(config.reasoning));
+
+  if (hasAssistantMetadata) message.role = 'assistant';
+
+  if (provider.adapter === 'claude' && (hasClaudeThinking || toolCalls.length > 0)) {
+    const blocks = [];
+    if (hasClaudeThinking) {
+      blocks.push({ type: 'thinking', thinking: config.reasoning, signature: config.signature });
+    }
+    if (Array.isArray(baseMessage.content)) {
+      blocks.push(...cloneSPresetData(baseMessage.content));
+    } else if (!hadEmptyPlaceholder && baseMessage.content !== undefined && baseMessage.content !== null && String(baseMessage.content).length > 0) {
+      blocks.push({ type: 'text', text: String(baseMessage.content) });
+    }
+    config.toolCalls.forEach(call => {
+      blocks.push({ type: 'tool_use', id: call.id, name: call.name, input: cloneSPresetData(call.arguments) });
+    });
+    message.content = blocks.length ? blocks : [{ type: 'text', text: '\u200b' }];
+    delete message.tool_calls;
+    delete message.tool_call_id;
+    delete message.reasoning;
+    delete message.reasoning_content;
+    delete message.signature;
+  } else {
+    if (toolCalls.length > 0) message.tool_calls = toolCalls;
+    if (provider.adapter === 'gemini') {
+      if (config.reasoning) message.reasoning = config.reasoning;
+      if (config.signature) message.signature = config.signature;
+    } else if (provider.adapter === 'openrouter') {
+      if (config.reasoning) message.reasoning = config.reasoning;
+      const signatureMovedToFirstTool = toolCalls.length > 0
+        && !config.toolCalls[0]?.signature
+        && toolCalls[0].signature === config.signature;
+      if (config.signature && !signatureMovedToFirstTool) message.signature = config.signature;
+    } else if (provider.adapter === 'deepseek') {
+      if (config.reasoning) message.reasoning_content = config.reasoning;
+      delete message.signature;
+    }
+  }
+  if (!(hadEmptyPlaceholder && !hasAssistantMetadata && config.toolResults.length > 0)) {
+    result.push(message);
+  }
+
+  if (config.toolResults.length > 0) {
+    if (provider.adapter === 'claude') {
+      result.push({
+        role: 'user',
+        content: config.toolResults.map(toolResult => ({
+          type: 'tool_result',
+          tool_use_id: toolResult.toolCallId,
+          content: stringifySPresetMessageValue(toolResult.content),
+          ...(toolResult.isError ? { is_error: true } : {}),
+        })),
+      });
+    } else {
+      config.toolResults.forEach(toolResult => {
+        result.push({
+          role: 'tool',
+          tool_call_id: toolResult.toolCallId,
+          content: stringifySPresetMessageValue(toolResult.content),
+        });
+      });
+    }
+  }
+  return result;
+}
+
+function getSPresetFlattenedMessageSources(messageCollection) {
+  const sources = [];
+  for (const item of messageCollection?.collection || []) {
+    if (item instanceof SPresetImports.MessageCollection) {
+      for (const message of item.collection || []) {
+        if (message?.content || message?.tool_calls) sources.push(message);
+      }
+    } else if (item instanceof SPresetImports.Message && (item.content || item.tool_calls)) {
+      sources.push(item);
+    }
+  }
+  return sources;
+}
+
+function serializeSPresetSourceMessage(message) {
+  return {
+    role: message.role,
+    content: cloneSPresetData(message.content),
+    ...(message.name ? { name: message.name } : {}),
+    ...(message.tool_calls ? { tool_calls: cloneSPresetData(message.tool_calls) } : {}),
+    ...(message.role === 'tool' ? { tool_call_id: message.identifier } : {}),
+    ...(message.signature ? { signature: message.signature } : {}),
+    ...(message.reasoning ? { reasoning: message.reasoning } : {}),
+    __spresetIdentifier: message.identifier,
+  };
+}
+
+function squashSPresetSnapshotMessages(messages) {
+  const excludeList = ['newMainChat', 'newChat', 'groupNudge'];
+  const squashed = [];
+  for (const sourceMessage of messages) {
+    const message = { ...sourceMessage };
+    const identifier = message.__spresetIdentifier;
+    delete message.__spresetIdentifier;
+    if (message.role === 'system' && !message.content) continue;
+    const shouldSquash = message.role === 'system' && !message.name && !excludeList.includes(identifier);
+    const previous = squashed.at(-1);
+    const previousShouldSquash = previous?.role === 'system'
+      && !previous?.name
+      && !excludeList.includes(previous?.__spresetSourceIdentifier);
+    if (shouldSquash && previousShouldSquash) {
+      previous.content += `\n${message.content}`;
+      continue;
+    }
+    Object.defineProperty(message, '__spresetSourceIdentifier', { value: identifier, configurable: true });
+    squashed.push(message);
+  }
+  squashed.forEach(message => delete message.__spresetSourceIdentifier);
+  return squashed;
+}
+
+function applySPresetMessageInjections(chat, messageCollectionOrSources) {
+  if (!Array.isArray(chat) || !SPresetSettings.MessageInjections) return chat;
+  const sources = Array.isArray(messageCollectionOrSources)
+    ? messageCollectionOrSources
+    : getSPresetFlattenedMessageSources(messageCollectionOrSources);
+  if (sources.length !== chat.length) {
+    console.warn('[SPreset-MessageInjection] 消息映射数量不一致，已跳过注入。', sources.length, chat.length);
+    return chat;
+  }
+  const provider = getSPresetCurrentProvider();
+  return chat.flatMap((message, index) => {
+    const binding = SPresetSettings.MessageInjections?.[sources[index]?.identifier];
+    if (!binding?.enabled) return [message];
+    const validation = validateSPresetMessageInjection(binding);
+    if (!validation.valid) {
+      console.warn(`[SPreset-MessageInjection] ${sources[index]?.identifier} 配置无效，已跳过：`, validation.errors);
+      return [message];
+    }
+    return applySPresetMessageInjection(message, normalizeSPresetMessageInjection(binding), provider);
+  });
+}
+
+function installSPresetMessageInjectionHook() {
+  const promptManager = SPresetImports?.promptManager;
+  if (!promptManager || promptManager.__spresetMessageInjectionHooked) return;
+  const originalSetChatCompletion = promptManager.setChatCompletion;
+  if (typeof originalSetChatCompletion !== 'function') {
+    console.warn('[SPreset-MessageInjection] 当前酒馆版本没有 setChatCompletion，无法安装结构化消息注入。');
+    return;
+  }
+  promptManager.setChatCompletion = function (chatCompletion) {
+    if (chatCompletion && typeof chatCompletion.getChat === 'function' && !chatCompletion.__spresetMessageInjectionHooked) {
+      const snapshotSources = getSPresetFlattenedMessageSources(chatCompletion.messages);
+      const hasActiveInjection = snapshotSources.some(message => SPresetSettings.MessageInjections?.[message.identifier]?.enabled);
+      const snapshot = hasActiveInjection ? {
+        sources: snapshotSources.map(message => ({ identifier: message.identifier })),
+        chat: snapshotSources.map(serializeSPresetSourceMessage),
+      } : null;
+      const originalGetChat = chatCompletion.getChat;
+      chatCompletion.getChat = function (...args) {
+        const chat = originalGetChat.apply(this, args);
+        const currentSources = getSPresetFlattenedMessageSources(this.messages);
+        if (snapshot && currentSources.length !== snapshot.sources.length) {
+          const injectedSnapshot = applySPresetMessageInjections(snapshot.chat, snapshot.sources);
+          return squashSPresetSnapshotMessages(injectedSnapshot);
+        }
+        return applySPresetMessageInjections(chat, this.messages);
+      };
+      Object.defineProperty(chatCompletion, '__spresetMessageInjectionHooked', { value: true });
+    }
+    return originalSetChatCompletion.apply(this, arguments);
+  };
+  Object.defineProperty(promptManager, '__spresetMessageInjectionHooked', { value: true });
+}
+
 // inject SPresetEditor
 if (true) {
+  const spresetScriptUrl = document.currentScript?.src
+    || document.getElementById('spreset_inject')?.src
+    || '/scripts/extensions/third-party/SPreset/inject.js';
+  const editorBundleUrl = new URL('bundled.html', spresetScriptUrl).href;
   // fetch html file
-  fetch('https://astro4.pages.dev/bundled.html')
+  fetch(editorBundleUrl, { cache: 'no-store' })
     .then(res => res.text())
     .then(htmlText => {
       // create iframe with text as same-origin iframe
@@ -409,7 +785,7 @@ $(async () => {
       SPresetImports.promptManager.preparePrompt = function (prompt, original = null) {
         if (!SPresetSettings.MacroNest || !prompt.content) {
           const result = originalFunction.apply(this, [prompt, original]);
-          return result;
+          return ensureSPresetStructuredMessageContent(result);
         }
         try {
           if (!PromptClass) {
@@ -447,12 +823,13 @@ $(async () => {
               preparedPrompt.content = substituteParamsRecursive(prompt.content);
             }
           }
-          return preparedPrompt;
+          return ensureSPresetStructuredMessageContent(preparedPrompt);
         } catch (error) {
           console.error('preparePrompt error', error);
           throw error;
         }
       };
+      installSPresetMessageInjectionHook();
     }
   });
 
@@ -516,6 +893,32 @@ $(async () => {
         ctx.saveSettingsDebounced();
         syncSPresetToolRegistrations();
       }
+    },
+  };
+
+  // 结构化消息编辑器桥接：配置随预设保存，发送时才读取当前 provider。
+  window.SPresetMessageInjection = {
+    validateMessageInjection: validateSPresetMessageInjection,
+    getCurrentProvider: getSPresetCurrentProvider,
+    getMessageInjection(identifier) {
+      return cloneSPresetData(SPresetSettings.MessageInjections?.[identifier] || null);
+    },
+    saveMessageInjection(identifier, data) {
+      const validation = validateSPresetMessageInjection(data);
+      if (!validation.valid) return validation;
+      if (!SPresetSettings.MessageInjections) SPresetSettings.MessageInjections = {};
+      SPresetSettings.MessageInjections[identifier] = normalizeSPresetMessageInjection(data);
+      persistSPresetSettings();
+      return { valid: true, errors: [] };
+    },
+    deleteMessageInjection(identifier) {
+      if (!SPresetSettings.MessageInjections?.[identifier]) return;
+      delete SPresetSettings.MessageInjections[identifier];
+      persistSPresetSettings();
+    },
+    previewMessageInjection(identifier, baseMessage = { role: 'assistant', content: '' }) {
+      const binding = SPresetSettings.MessageInjections?.[identifier];
+      return binding ? cloneSPresetData(applySPresetMessageInjection(baseMessage, binding)) : [cloneSPresetData(baseMessage)];
     },
   };
 });
@@ -629,6 +1032,7 @@ function reloadSettings() {
     RegexBinding: {},
     MacroNest: false,
     ToolBindings: {},
+    MessageInjections: {},
   };
   const defaultGlobalSettings = {
     RegexBinding: {},
@@ -648,6 +1052,9 @@ function reloadSettings() {
   }
   if (temp1 && !temp1.ToolBindings) {
     temp1.ToolBindings = {};
+  }
+  if (temp1 && !temp1.MessageInjections) {
+    temp1.MessageInjections = {};
   }
   const temp2 = ctx.extensionSettings.SPreset;
   SPresetSettings = temp1 || defaultPresetSettings;
