@@ -515,6 +515,36 @@ body.dark-mode .tool-binding-header:hover .tool-binding-chevron {
   color: #818cf8;
 }
 
+.tool-form-parameter {
+  grid-template-columns: minmax(110px, 1fr) 110px minmax(140px, 1.5fr) auto auto;
+}
+
+.tool-form-code {
+  line-height: 1.5;
+  tab-size: 2;
+  -moz-tab-size: 2;
+}
+
+body.dark-mode .tool-binding-mode-tabs,
+body.dark-mode .message-editor-mode-tabs {
+  background-color: #0f172a;
+  border-color: #475569;
+}
+
+body.dark-mode .tool-binding-mode-button.bg-white,
+body.dark-mode .message-editor-mode-button.bg-white {
+  background-color: #334155 !important;
+}
+
+body.dark-mode .tool-form-fields input,
+body.dark-mode .tool-form-fields select,
+body.dark-mode .tool-form-fields textarea,
+body.dark-mode .tool-form-parameter {
+  background-color: #020617 !important;
+  border-color: #475569 !important;
+  color: #f8fafc !important;
+}
+
 /* ============================================================================
    结构化消息样式
    ============================================================================ */
@@ -577,8 +607,33 @@ body.dark-mode .message-injection-panel .message-provider-detail {
   color: #94a3b8;
 }
 
+body.dark-mode .message-tool-call-card,
+body.dark-mode .message-tool-result-card {
+  background-color: rgba(15, 23, 42, 0.7) !important;
+  border-color: #475569 !important;
+}
+
+body.dark-mode .message-tool-call-card input,
+body.dark-mode .message-tool-call-card textarea,
+body.dark-mode .message-tool-result-card input,
+body.dark-mode .message-tool-result-card select,
+body.dark-mode .message-tool-result-card textarea {
+  background-color: #020617 !important;
+  border-color: #475569 !important;
+  color: #f8fafc !important;
+}
+
 /* 移动端媒体查询 */
 @media (max-width: 768px) {
+  .tool-form-parameter {
+    grid-template-columns: 1fr 100px auto auto;
+  }
+
+  .tool-parameter-description {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
   /* 隐藏收藏夹区域 */
   .favorites-section {
     display: none !important;
@@ -1835,45 +1890,197 @@ function toolCodePlaceholder() {
   return '// 代码必须返回包含 name, description, parameters, action 的对象\n// 例如:\nreturn {\n    name: "my_tool",\n    description: "工具描述",\n    parameters: {\n        type: "object",\n        properties: {\n            query: { type: "string", description: "参数描述" }\n        },\n        required: ["query"]\n    },\n    action: async (args) => {\n        return JSON.stringify({ result: args.query });\n    }\n};';
 }
 
+function getDefaultToolForm() {
+  return {
+    name: '',
+    displayName: '',
+    description: '',
+    parameters: [],
+    actionBody: 'return JSON.stringify({ ok: true });',
+    formatMessageBody: '',
+    stealth: false,
+  };
+}
+
+function normalizeToolForm(form) {
+  const fallback = getDefaultToolForm();
+  if (!form || typeof form !== 'object') return fallback;
+  return {
+    name: String(form.name ?? ''),
+    displayName: String(form.displayName ?? ''),
+    description: String(form.description ?? ''),
+    parameters: Array.isArray(form.parameters) ? form.parameters : [],
+    actionBody: String(form.actionBody ?? fallback.actionBody),
+    formatMessageBody: String(form.formatMessageBody ?? ''),
+    stealth: Boolean(form.stealth),
+  };
+}
+
+function createToolParameterRowHTML(parameter = {}) {
+  const types = ['string', 'number', 'integer', 'boolean', 'array', 'object'];
+  const type = types.includes(parameter.type) ? parameter.type : 'string';
+  return `
+    <div class="tool-form-parameter grid grid-cols-[1fr_110px_1.5fr_auto_auto] gap-2 items-center rounded border border-slate-200 bg-white p-2">
+      <input class="tool-parameter-name rounded border border-slate-200 px-2 py-1 text-xs" placeholder="参数名"
+             value="${escapeHtml(parameter.name || '')}">
+      <select class="tool-parameter-type rounded border border-slate-200 px-2 py-1 text-xs">
+        ${types.map(value => `<option value="${value}" ${value === type ? 'selected' : ''}>${value}</option>`).join('')}
+      </select>
+      <input class="tool-parameter-description rounded border border-slate-200 px-2 py-1 text-xs" placeholder="参数说明"
+             value="${escapeHtml(parameter.description || '')}">
+      <label class="flex items-center gap-1 text-[10px] text-slate-500 whitespace-nowrap">
+        <input type="checkbox" class="tool-parameter-required" ${parameter.required ? 'checked' : ''}> 必填
+      </label>
+      <button type="button" onclick="event.stopPropagation(); this.closest('.tool-form-parameter').remove()"
+              class="text-slate-400 hover:text-red-500" title="删除参数">
+        <span class="material-symbols-outlined text-[17px]">delete</span>
+      </button>
+    </div>`;
+}
+
+function createToolFormHTML(form) {
+  form = normalizeToolForm(form);
+  return `
+    <div class="tool-form-fields flex flex-col gap-3">
+      <div class="grid grid-cols-2 gap-2">
+        <label class="flex flex-col gap-1 text-[11px] text-slate-600">工具名称（API name）
+          <input class="tool-form-name rounded border border-slate-200 px-2 py-1.5 text-xs" value="${escapeHtml(form.name)}" placeholder="search_web">
+        </label>
+        <label class="flex flex-col gap-1 text-[11px] text-slate-600">显示名称
+          <input class="tool-form-display-name rounded border border-slate-200 px-2 py-1.5 text-xs" value="${escapeHtml(form.displayName)}" placeholder="网页搜索">
+        </label>
+      </div>
+      <label class="flex flex-col gap-1 text-[11px] text-slate-600">工具描述
+        <textarea class="tool-form-description rounded border border-slate-200 p-2 text-xs resize-y" rows="2" placeholder="告诉模型何时、如何使用该工具">${escapeHtml(form.description)}</textarea>
+      </label>
+      <div class="flex items-center justify-between">
+        <span class="text-[11px] font-medium text-slate-600">参数</span>
+        <button type="button" onclick="event.stopPropagation(); addToolFormParameter(this)"
+                class="flex items-center gap-1 text-[11px] text-indigo-600 hover:text-indigo-700">
+          <span class="material-symbols-outlined text-[15px]">add</span>添加参数
+        </button>
+      </div>
+      <div class="tool-form-parameters flex flex-col gap-2">
+        ${form.parameters.length ? form.parameters.map(createToolParameterRowHTML).join('') : '<div class="tool-form-empty text-center text-[10px] text-slate-400 py-2">暂无参数</div>'}
+      </div>
+      <label class="flex flex-col gap-1 text-[11px] text-slate-600">执行逻辑（函数体，可使用 args）
+        <textarea class="tool-form-action tool-form-code rounded border border-slate-200 bg-slate-50 p-2 font-mono text-[11px] resize-y" rows="7" spellcheck="false">${escapeHtml(form.actionBody)}</textarea>
+      </label>
+      <label class="flex flex-col gap-1 text-[11px] text-slate-600">消息格式化（可选函数体）
+        <textarea class="tool-form-format-message tool-form-code rounded border border-slate-200 bg-slate-50 p-2 font-mono text-[11px] resize-y" rows="3" spellcheck="false" placeholder='例如：return "搜索：" + args.query;'>${escapeHtml(form.formatMessageBody)}</textarea>
+      </label>
+      <label class="flex items-center gap-2 text-xs text-slate-600">
+        <input type="checkbox" class="tool-form-stealth" ${form.stealth ? 'checked' : ''}> 静默工具（不在聊天中显示调用过程）
+      </label>
+      <div class="text-[10px] text-slate-400">表单模式覆盖常用字段；复杂 JSON Schema、额外回调和自定义属性请切换到代码模式。</div>
+    </div>`;
+}
+
+function addToolFormParameter(button) {
+  const panel = button.closest('.tool-binding-panel');
+  const container = panel?.querySelector('.tool-form-parameters');
+  if (!container) return;
+  container.querySelector('.tool-form-empty')?.remove();
+  container.insertAdjacentHTML('beforeend', createToolParameterRowHTML());
+}
+
+function collectToolForm(panel) {
+  return {
+    name: panel.querySelector('.tool-form-name')?.value?.trim() || '',
+    displayName: panel.querySelector('.tool-form-display-name')?.value?.trim() || '',
+    description: panel.querySelector('.tool-form-description')?.value || '',
+    parameters: Array.from(panel.querySelectorAll('.tool-form-parameter')).map(row => ({
+      name: row.querySelector('.tool-parameter-name')?.value?.trim() || '',
+      type: row.querySelector('.tool-parameter-type')?.value || 'string',
+      description: row.querySelector('.tool-parameter-description')?.value || '',
+      required: row.querySelector('.tool-parameter-required')?.checked ?? false,
+    })).filter(parameter => parameter.name),
+    actionBody: panel.querySelector('.tool-form-action')?.value || '',
+    formatMessageBody: panel.querySelector('.tool-form-format-message')?.value || '',
+    stealth: panel.querySelector('.tool-form-stealth')?.checked ?? false,
+  };
+}
+
+function indentToolCode(code, spaces = 8) {
+  const indentation = ' '.repeat(spaces);
+  return String(code || '').split('\n').map(line => indentation + line).join('\n');
+}
+
+function buildToolCodeFromForm(form) {
+  const properties = {};
+  const required = [];
+  for (const parameter of form.parameters || []) {
+    properties[parameter.name] = {
+      type: parameter.type || 'string',
+      ...(parameter.description ? { description: parameter.description } : {}),
+    };
+    if (parameter.required) required.push(parameter.name);
+  }
+  const parameters = {
+    type: 'object',
+    properties,
+    ...(required.length ? { required } : {}),
+  };
+  const optionalDisplayName = form.displayName ? `\n    displayName: ${JSON.stringify(form.displayName)},` : '';
+  const optionalFormatMessage = form.formatMessageBody.trim()
+    ? `\n    formatMessage: (args) => {\n${indentToolCode(form.formatMessageBody)}\n    },`
+    : '';
+  return `return {\n    name: ${JSON.stringify(form.name)},${optionalDisplayName}\n    description: ${JSON.stringify(form.description)},\n    parameters: ${JSON.stringify(parameters, null, 4).replaceAll('\n', '\n    ')},\n    action: async (args) => {\n${indentToolCode(form.actionBody)}\n    },${optionalFormatMessage}\n    stealth: ${Boolean(form.stealth)},\n};`;
+}
+
 function createToolBindingHTML(item) {
-  const identifier = item.identifier || item.id;
+  const identifier = String(item.identifier || item.id);
   const binding = getToolBindingForItem(identifier);
   const hasBinding = binding && binding.code;
   const isEnabled = binding ? binding.enabled : false;
   const code = binding ? binding.code : '';
   const isValid = binding ? binding.valid : false;
+  const editorMode = binding?.editorMode === 'form' || !hasBinding ? 'form' : 'code';
+  const form = normalizeToolForm(binding?.form);
+  const inlineIdentifier = toInlineString(identifier);
 
   return `
     <div class="tool-binding-section border-t border-slate-100 mt-2 pt-2">
       <div class="tool-binding-header flex items-center justify-between cursor-pointer select-none"
-           onclick="event.stopPropagation(); toggleToolBindingPanel('${identifier}')">
+           onclick="event.stopPropagation(); toggleToolBindingPanel(${inlineIdentifier})">
         <div class="flex items-center gap-1.5">
           <span class="material-symbols-outlined text-[16px] text-slate-400 tool-binding-chevron"
-                id="tool-chevron-${identifier}">chevron_right</span>
+                id="tool-chevron-${escapeHtml(identifier)}">chevron_right</span>
           <span class="material-symbols-outlined text-[14px] ${hasBinding && isEnabled ? 'text-indigo-500' : 'text-slate-400'}">build</span>
           <span class="text-xs font-medium ${hasBinding && isEnabled ? 'text-indigo-600' : 'text-slate-500'}">工具绑定</span>
+          <span class="tool-binding-mode-label text-[10px] bg-slate-100 text-slate-500 px-1 py-0.5 rounded">${editorMode === 'form' ? '表单' : '代码'}</span>
           ${isValid ? '<span class="text-[10px] bg-green-100 text-green-700 px-1 py-0.5 rounded">有效</span>' : ''}
           ${hasBinding && !isValid ? '<span class="text-[10px] bg-red-100 text-red-700 px-1 py-0.5 rounded">无效</span>' : ''}
         </div>
       </div>
-      <div class="tool-binding-panel" id="tool-panel-${identifier}" style="display: none;">
-        <div class="mt-2 flex flex-col gap-2">
-          <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer"
-                 onclick="event.stopPropagation()">
+      <div class="tool-binding-panel" id="tool-panel-${escapeHtml(identifier)}" data-editor-mode="${editorMode}"
+           style="display: none;" onclick="event.stopPropagation()" onpointerdown="event.stopPropagation()">
+        <div class="mt-2 flex flex-col gap-3">
+          <div class="flex items-center justify-between gap-2">
+            <label class="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
             <input type="checkbox" ${isEnabled ? 'checked' : ''}
                    class="tool-binding-toggle"
-                   data-identifier="${identifier}">
+                   data-identifier="${escapeHtml(identifier)}">
             <span>启用工具函数</span>
-          </label>
-          <textarea class="tool-binding-code w-full text-xs font-mono text-slate-700 bg-slate-50 border border-slate-200 rounded p-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none"
-                    data-identifier="${identifier}"
-                    rows="8"
-                    spellcheck="false"
-                    onclick="event.stopPropagation()"
-                    placeholder="${escapeHtml(toolCodePlaceholder())}">${escapeHtml(code)}</textarea>
+            </label>
+            <div class="tool-binding-mode-tabs flex rounded border border-slate-200 bg-slate-50 p-0.5">
+              <button type="button" data-tool-mode="form" onclick="event.stopPropagation(); switchToolBindingEditorMode(${inlineIdentifier}, 'form')"
+                      class="tool-binding-mode-button rounded px-2 py-1 text-[10px] ${editorMode === 'form' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}">表单模式</button>
+              <button type="button" data-tool-mode="code" onclick="event.stopPropagation(); switchToolBindingEditorMode(${inlineIdentifier}, 'code')"
+                      class="tool-binding-mode-button rounded px-2 py-1 text-[10px] ${editorMode === 'code' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}">代码模式</button>
+            </div>
+          </div>
+          <div class="tool-binding-form-view" style="display: ${editorMode === 'form' ? 'block' : 'none'};">
+            <div class="tool-form-container">${createToolFormHTML(form)}</div>
+          </div>
+          <div class="tool-binding-code-view" style="display: ${editorMode === 'code' ? 'block' : 'none'};">
+            <textarea class="tool-binding-code w-full text-xs font-mono text-slate-700 bg-slate-50 border border-slate-200 rounded p-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-y"
+                      data-identifier="${escapeHtml(identifier)}" rows="14" spellcheck="false"
+                      placeholder="${escapeHtml(toolCodePlaceholder())}">${escapeHtml(code)}</textarea>
+          </div>
           <div class="flex justify-between items-center">
-            <span class="tool-binding-status text-[10px]" id="tool-status-${identifier}"></span>
-            <button onclick="event.stopPropagation(); saveToolBinding('${identifier}')"
+            <span class="tool-binding-status text-[10px]" id="tool-status-${escapeHtml(identifier)}"></span>
+            <button onclick="event.stopPropagation(); saveToolBinding(${inlineIdentifier})"
                     class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-3 py-1 rounded transition-colors">
               保存工具
             </button>
@@ -1896,6 +2103,50 @@ function toggleToolBindingPanel(identifier) {
   }
 }
 
+function updateToolBindingModeUI(panel, mode) {
+  panel.dataset.editorMode = mode;
+  panel.querySelector('.tool-binding-form-view').style.display = mode === 'form' ? 'block' : 'none';
+  panel.querySelector('.tool-binding-code-view').style.display = mode === 'code' ? 'block' : 'none';
+  const modeLabel = panel.closest('.tool-binding-section')?.querySelector('.tool-binding-mode-label');
+  if (modeLabel) modeLabel.textContent = mode === 'form' ? '表单' : '代码';
+  panel.querySelectorAll('.tool-binding-mode-button').forEach(button => {
+    const active = button.dataset.toolMode === mode;
+    button.className = `tool-binding-mode-button rounded px-2 py-1 text-[10px] ${
+      active ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'
+    }`;
+  });
+}
+
+function switchToolBindingEditorMode(identifier, mode) {
+  const panel = document.getElementById('tool-panel-' + identifier);
+  if (!panel || !['form', 'code'].includes(mode) || panel.dataset.editorMode === mode) return;
+  const textarea = panel.querySelector('.tool-binding-code');
+
+  if (mode === 'form') {
+    const code = textarea?.value?.trim() || '';
+    if (code) {
+      const api = window.top.window.SPresetToolBinding;
+      const parsed = api?.parseToolCodeToForm?.(code);
+      if (!parsed?.valid) {
+        const message = parsed?.error || '代码无法转换为表单，请先修正代码';
+        const status = document.getElementById('tool-status-' + identifier);
+        if (status) {
+          status.textContent = '✗ ' + message;
+          status.className = 'tool-binding-status text-[10px] text-red-600';
+        }
+        showToast(message);
+        return;
+      }
+      panel.querySelector('.tool-form-container').innerHTML = createToolFormHTML(parsed.form);
+    }
+  } else {
+    const form = collectToolForm(panel);
+    if (textarea) textarea.value = buildToolCodeFromForm(form);
+  }
+
+  updateToolBindingModeUI(panel, mode);
+}
+
 function saveToolBinding(identifier) {
   const panel = document.getElementById('tool-panel-' + identifier);
   if (!panel) return;
@@ -1904,7 +2155,10 @@ function saveToolBinding(identifier) {
   const toggle = panel.querySelector('.tool-binding-toggle');
   const statusEl = document.getElementById('tool-status-' + identifier);
 
-  const code = textarea ? textarea.value : '';
+  const editorMode = panel.dataset.editorMode === 'form' ? 'form' : 'code';
+  const form = editorMode === 'form' ? collectToolForm(panel) : null;
+  const code = editorMode === 'form' ? buildToolCodeFromForm(form) : textarea?.value || '';
+  if (textarea && editorMode === 'form') textarea.value = code;
   const enabled = toggle ? toggle.checked : false;
 
   try {
@@ -1914,7 +2168,7 @@ function saveToolBinding(identifier) {
       return;
     }
 
-    const validation = api.saveToolBinding(identifier, { enabled, code });
+    const validation = api.saveToolBinding(identifier, { enabled, code, editorMode, form });
 
     if (validation.valid) {
       showToast('工具函数已保存，验证通过 ✓');
@@ -1970,6 +2224,151 @@ function formatMessageJson(value) {
   return escapeHtml(JSON.stringify(Array.isArray(value) ? value : [], null, 2));
 }
 
+function createMessageToolCallCardHTML(call = {}) {
+  const argumentsText = typeof call.arguments === 'string'
+    ? call.arguments
+    : JSON.stringify(call.arguments || {}, null, 2);
+  return `
+    <div class="message-tool-call-card rounded border border-violet-200 bg-violet-50/40 p-2.5 flex flex-col gap-2">
+      <div class="flex items-center justify-between">
+        <span class="flex items-center gap-1 text-[11px] font-medium text-violet-700">
+          <span class="material-symbols-outlined text-[16px]">function</span>工具调用
+        </span>
+        <button type="button" onclick="event.stopPropagation(); this.closest('.message-tool-call-card').remove()"
+                class="text-slate-400 hover:text-red-500" title="删除调用"><span class="material-symbols-outlined text-[17px]">delete</span></button>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <label class="flex flex-col gap-1 text-[10px] text-slate-500">调用 ID
+          <input class="message-call-id rounded border border-slate-200 bg-white px-2 py-1.5 text-xs" value="${escapeHtml(call.id || '')}" placeholder="call_1">
+        </label>
+        <label class="flex flex-col gap-1 text-[10px] text-slate-500">工具名称
+          <input class="message-call-name rounded border border-slate-200 bg-white px-2 py-1.5 text-xs" value="${escapeHtml(call.name || call.function?.name || '')}" placeholder="search_web">
+        </label>
+      </div>
+      <label class="flex flex-col gap-1 text-[10px] text-slate-500">参数对象
+        <textarea class="message-call-arguments message-injection-input rounded border border-slate-200 bg-white p-2 font-mono text-[11px] resize-y" rows="4" spellcheck="false" placeholder='{"query":"关键词"}'>${escapeHtml(argumentsText)}</textarea>
+      </label>
+      <label class="flex flex-col gap-1 text-[10px] text-slate-500">调用签名（可选）
+        <textarea class="message-call-signature message-injection-input rounded border border-slate-200 bg-white p-2 font-mono text-[11px] resize-y" rows="2" spellcheck="false" placeholder="Gemini / OpenRouter 工具调用签名">${escapeHtml(call.signature || '')}</textarea>
+      </label>
+    </div>`;
+}
+
+function createMessageToolResultCardHTML(result = {}) {
+  const isText = typeof result.content === 'string' || result.content === undefined;
+  const content = isText ? result.content || '' : JSON.stringify(result.content, null, 2);
+  return `
+    <div class="message-tool-result-card rounded border border-sky-200 bg-sky-50/40 p-2.5 flex flex-col gap-2">
+      <div class="flex items-center justify-between">
+        <span class="flex items-center gap-1 text-[11px] font-medium text-sky-700">
+          <span class="material-symbols-outlined text-[16px]">assignment_return</span>工具返回
+        </span>
+        <button type="button" onclick="event.stopPropagation(); this.closest('.message-tool-result-card').remove()"
+                class="text-slate-400 hover:text-red-500" title="删除返回"><span class="material-symbols-outlined text-[17px]">delete</span></button>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <label class="flex flex-col gap-1 text-[10px] text-slate-500">对应调用 ID
+          <input class="message-result-call-id rounded border border-slate-200 bg-white px-2 py-1.5 text-xs" value="${escapeHtml(result.toolCallId || result.tool_call_id || '')}" placeholder="call_1">
+        </label>
+        <label class="flex flex-col gap-1 text-[10px] text-slate-500">工具名称（可选）
+          <input class="message-result-name rounded border border-slate-200 bg-white px-2 py-1.5 text-xs" value="${escapeHtml(result.name || '')}" placeholder="search_web">
+        </label>
+      </div>
+      <div class="flex items-center justify-between gap-2">
+        <label class="flex items-center gap-1 text-[10px] text-slate-500">返回类型
+          <select class="message-result-content-type rounded border border-slate-200 bg-white px-2 py-1 text-xs">
+            <option value="text" ${isText ? 'selected' : ''}>文本</option>
+            <option value="json" ${!isText ? 'selected' : ''}>JSON</option>
+          </select>
+        </label>
+        <label class="flex items-center gap-1 text-[10px] text-red-500">
+          <input type="checkbox" class="message-result-error" ${result.isError || result.is_error ? 'checked' : ''}>错误返回
+        </label>
+      </div>
+      <textarea class="message-result-content message-injection-input rounded border border-slate-200 bg-white p-2 font-mono text-[11px] resize-y" rows="4" spellcheck="false" placeholder="工具执行结果">${escapeHtml(content)}</textarea>
+    </div>`;
+}
+
+function createMessageStructuredFormHTML(toolCalls, toolResults) {
+  return `
+    <div class="flex items-center justify-between">
+      <span class="text-[11px] font-medium text-violet-700">工具调用</span>
+      <button type="button" onclick="event.stopPropagation(); addMessageToolCall(this)"
+              class="flex items-center gap-1 text-[11px] text-violet-600 hover:text-violet-700"><span class="material-symbols-outlined text-[15px]">add</span>添加调用</button>
+    </div>
+    <div class="message-tool-calls-form flex flex-col gap-2">
+      ${toolCalls.length ? toolCalls.map(createMessageToolCallCardHTML).join('') : '<div class="message-calls-empty text-center text-[10px] text-slate-400 py-2">暂无工具调用</div>'}
+    </div>
+    <div class="flex items-center justify-between mt-1">
+      <span class="text-[11px] font-medium text-sky-700">工具返回</span>
+      <button type="button" onclick="event.stopPropagation(); addMessageToolResult(this)"
+              class="flex items-center gap-1 text-[11px] text-sky-600 hover:text-sky-700"><span class="material-symbols-outlined text-[15px]">add</span>添加返回</button>
+    </div>
+    <div class="message-tool-results-form flex flex-col gap-2">
+      ${toolResults.length ? toolResults.map(createMessageToolResultCardHTML).join('') : '<div class="message-results-empty text-center text-[10px] text-slate-400 py-2">暂无工具返回</div>'}
+    </div>`;
+}
+
+function addMessageToolCall(button) {
+  const panel = button.closest('.message-injection-panel');
+  const container = panel?.querySelector('.message-tool-calls-form');
+  if (!container) return;
+  container.querySelector('.message-calls-empty')?.remove();
+  const id = 'call_' + uuid().replaceAll('-', '').slice(0, 10);
+  container.insertAdjacentHTML('beforeend', createMessageToolCallCardHTML({ id, arguments: {} }));
+}
+
+function addMessageToolResult(button) {
+  const panel = button.closest('.message-injection-panel');
+  const container = panel?.querySelector('.message-tool-results-form');
+  if (!container) return;
+  container.querySelector('.message-results-empty')?.remove();
+  const callId = panel.querySelector('.message-call-id')?.value || '';
+  container.insertAdjacentHTML('beforeend', createMessageToolResultCardHTML({ toolCallId: callId, content: '' }));
+}
+
+function collectMessageToolCalls(panel) {
+  return Array.from(panel.querySelectorAll('.message-tool-call-card')).map((card, index) => {
+    const rawArguments = card.querySelector('.message-call-arguments')?.value?.trim() || '{}';
+    let args;
+    try {
+      args = JSON.parse(rawArguments);
+    } catch (e) {
+      throw new Error(`工具调用 #${index + 1} 的参数不是合法 JSON：${e.message}`);
+    }
+    if (!args || typeof args !== 'object' || Array.isArray(args)) {
+      throw new Error(`工具调用 #${index + 1} 的参数必须是 JSON 对象`);
+    }
+    return {
+      id: card.querySelector('.message-call-id')?.value?.trim() || '',
+      name: card.querySelector('.message-call-name')?.value?.trim() || '',
+      arguments: args,
+      signature: card.querySelector('.message-call-signature')?.value || '',
+    };
+  });
+}
+
+function collectMessageToolResults(panel) {
+  return Array.from(panel.querySelectorAll('.message-tool-result-card')).map((card, index) => {
+    const contentType = card.querySelector('.message-result-content-type')?.value || 'text';
+    const rawContent = card.querySelector('.message-result-content')?.value || '';
+    let content = rawContent;
+    if (contentType === 'json') {
+      try {
+        content = JSON.parse(rawContent || 'null');
+      } catch (e) {
+        throw new Error(`工具返回 #${index + 1} 的内容不是合法 JSON：${e.message}`);
+      }
+    }
+    return {
+      toolCallId: card.querySelector('.message-result-call-id')?.value?.trim() || '',
+      name: card.querySelector('.message-result-name')?.value?.trim() || '',
+      content,
+      isError: card.querySelector('.message-result-error')?.checked ?? false,
+    };
+  });
+}
+
 function createMessageInjectionHTML(item) {
   const identifier = String(item.identifier || item.id);
   const binding = getMessageInjectionForItem(identifier) || {};
@@ -1978,6 +2377,7 @@ function createMessageInjectionHTML(item) {
   const toolResults = Array.isArray(binding.toolResults) ? binding.toolResults : [];
   const hasData = Boolean(binding.reasoning || binding.signature || toolCalls.length || toolResults.length);
   const isActive = Boolean(binding.enabled && hasData);
+  const editorMode = binding.editorMode === 'json' ? 'json' : 'form';
   const inlineIdentifier = toInlineString(identifier);
 
   return `
@@ -1994,7 +2394,7 @@ function createMessageInjectionHTML(item) {
         </div>
         <span class="text-[10px] text-slate-400">自动适配 provider</span>
       </div>
-      <div class="message-injection-panel" id="message-panel-${escapeHtml(identifier)}" style="display: none;"
+      <div class="message-injection-panel" id="message-panel-${escapeHtml(identifier)}" data-editor-mode="${editorMode}" style="display: none;"
            onclick="event.stopPropagation()" onpointerdown="event.stopPropagation()">
         <div class="mt-2 flex flex-col gap-2">
           <div class="rounded border border-violet-100 bg-violet-50/60 px-2 py-1.5">
@@ -2015,14 +2415,28 @@ function createMessageInjectionHTML(item) {
           <textarea class="message-injection-signature message-injection-input w-full rounded border border-slate-200 bg-white p-2 font-mono text-[11px] resize-y"
                     rows="2" spellcheck="false"
                     placeholder="原样填写 provider 返回的签名；Gemini 工具调用会回退使用此签名。">${escapeHtml(binding.signature || '')}</textarea>
-          <label class="text-[11px] font-medium text-slate-600">工具调用（JSON 数组）</label>
-          <textarea class="message-injection-tool-calls message-injection-input w-full rounded border border-slate-200 bg-white p-2 font-mono text-[11px] resize-y"
-                    rows="6" spellcheck="false"
-                    placeholder='[{"id":"call_1","name":"search","arguments":{"query":"..."},"signature":"可选"}]'>${formatMessageJson(toolCalls)}</textarea>
-          <label class="text-[11px] font-medium text-slate-600">工具返回（JSON 数组）</label>
-          <textarea class="message-injection-tool-results message-injection-input w-full rounded border border-slate-200 bg-white p-2 font-mono text-[11px] resize-y"
-                    rows="5" spellcheck="false"
-                    placeholder='[{"toolCallId":"call_1","name":"search","content":{"ok":true},"isError":false}]'>${formatMessageJson(toolResults)}</textarea>
+          <div class="flex items-center justify-between border-t border-slate-100 pt-2">
+            <span class="text-[11px] font-medium text-slate-600">调用与返回</span>
+            <div class="message-editor-mode-tabs flex rounded border border-slate-200 bg-slate-50 p-0.5">
+              <button type="button" data-message-mode="form" onclick="event.stopPropagation(); switchMessageEditorMode(${inlineIdentifier}, 'form')"
+                      class="message-editor-mode-button rounded px-2 py-1 text-[10px] ${editorMode === 'form' ? 'bg-white text-violet-600 shadow-sm' : 'text-slate-400'}">表单模式</button>
+              <button type="button" data-message-mode="json" onclick="event.stopPropagation(); switchMessageEditorMode(${inlineIdentifier}, 'json')"
+                      class="message-editor-mode-button rounded px-2 py-1 text-[10px] ${editorMode === 'json' ? 'bg-white text-violet-600 shadow-sm' : 'text-slate-400'}">JSON 模式</button>
+            </div>
+          </div>
+          <div class="message-editor-form-view flex flex-col gap-2" style="display: ${editorMode === 'form' ? 'flex' : 'none'};">
+            ${createMessageStructuredFormHTML(toolCalls, toolResults)}
+          </div>
+          <div class="message-editor-json-view flex-col gap-2" style="display: ${editorMode === 'json' ? 'flex' : 'none'};">
+            <label class="text-[11px] font-medium text-slate-600">工具调用（JSON 数组）</label>
+            <textarea class="message-injection-tool-calls message-injection-input w-full rounded border border-slate-200 bg-white p-2 font-mono text-[11px] resize-y"
+                      rows="8" spellcheck="false"
+                      placeholder='[{"id":"call_1","name":"search","arguments":{"query":"..."},"signature":"可选"}]'>${formatMessageJson(toolCalls)}</textarea>
+            <label class="text-[11px] font-medium text-slate-600">工具返回（JSON 数组）</label>
+            <textarea class="message-injection-tool-results message-injection-input w-full rounded border border-slate-200 bg-white p-2 font-mono text-[11px] resize-y"
+                      rows="7" spellcheck="false"
+                      placeholder='[{"toolCallId":"call_1","name":"search","content":{"ok":true},"isError":false}]'>${formatMessageJson(toolResults)}</textarea>
+          </div>
           <div class="text-[10px] leading-4 text-slate-400">
             思维链、签名和调用属于 assistant；工具返回紧跟其后。不受当前 provider 支持的字段只保存、不发送。
           </div>
@@ -2070,6 +2484,37 @@ function readMessageJsonArray(panel, selector, label) {
   return value;
 }
 
+function updateMessageEditorModeUI(panel, mode) {
+  panel.dataset.editorMode = mode;
+  panel.querySelector('.message-editor-form-view').style.display = mode === 'form' ? 'flex' : 'none';
+  panel.querySelector('.message-editor-json-view').style.display = mode === 'json' ? 'flex' : 'none';
+  panel.querySelectorAll('.message-editor-mode-button').forEach(button => {
+    const active = button.dataset.messageMode === mode;
+    button.className = `message-editor-mode-button rounded px-2 py-1 text-[10px] ${
+      active ? 'bg-white text-violet-600 shadow-sm' : 'text-slate-400'
+    }`;
+  });
+}
+
+function switchMessageEditorMode(identifier, mode) {
+  const panel = document.getElementById('message-panel-' + identifier);
+  if (!panel || !['form', 'json'].includes(mode) || panel.dataset.editorMode === mode) return;
+  try {
+    if (mode === 'json') {
+      panel.querySelector('.message-injection-tool-calls').value = JSON.stringify(collectMessageToolCalls(panel), null, 2);
+      panel.querySelector('.message-injection-tool-results').value = JSON.stringify(collectMessageToolResults(panel), null, 2);
+    } else {
+      const toolCalls = readMessageJsonArray(panel, '.message-injection-tool-calls', '工具调用');
+      const toolResults = readMessageJsonArray(panel, '.message-injection-tool-results', '工具返回');
+      panel.querySelector('.message-editor-form-view').innerHTML = createMessageStructuredFormHTML(toolCalls, toolResults);
+    }
+    updateMessageEditorModeUI(panel, mode);
+  } catch (e) {
+    setMessageInjectionStatus(identifier, '✗ ' + (e.message || String(e)), false);
+    showToast('无法切换编辑模式: ' + (e.message || String(e)));
+  }
+}
+
 function saveMessageInjection(identifier) {
   const panel = document.getElementById('message-panel-' + identifier);
   const api = getMessageInjectionApi();
@@ -2079,12 +2524,20 @@ function saveMessageInjection(identifier) {
   }
 
   try {
+    const editorMode = panel.dataset.editorMode === 'json' ? 'json' : 'form';
+    const toolCalls = editorMode === 'json'
+      ? readMessageJsonArray(panel, '.message-injection-tool-calls', '工具调用')
+      : collectMessageToolCalls(panel);
+    const toolResults = editorMode === 'json'
+      ? readMessageJsonArray(panel, '.message-injection-tool-results', '工具返回')
+      : collectMessageToolResults(panel);
     const result = api.saveMessageInjection(identifier, {
       enabled: panel.querySelector('.message-injection-toggle')?.checked ?? false,
+      editorMode,
       reasoning: panel.querySelector('.message-injection-reasoning')?.value || '',
       signature: panel.querySelector('.message-injection-signature')?.value || '',
-      toolCalls: readMessageJsonArray(panel, '.message-injection-tool-calls', '工具调用'),
-      toolResults: readMessageJsonArray(panel, '.message-injection-tool-results', '工具返回'),
+      toolCalls,
+      toolResults,
     });
     if (!result.valid) throw new Error(result.errors.join('；'));
     setMessageInjectionStatus(identifier, '✓ 已保存', true);
@@ -2106,6 +2559,7 @@ function clearMessageInjection(identifier) {
   panel.querySelector('.message-injection-signature').value = '';
   panel.querySelector('.message-injection-tool-calls').value = '[]';
   panel.querySelector('.message-injection-tool-results').value = '[]';
+  panel.querySelector('.message-editor-form-view').innerHTML = createMessageStructuredFormHTML([], []);
   setMessageInjectionStatus(identifier, '✓ 已清除', true);
   showToast('结构化消息已清除');
 }

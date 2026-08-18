@@ -241,6 +241,7 @@ function normalizeSPresetMessageInjection(data) {
   };
   return {
     enabled: Boolean(data.enabled),
+    editorMode: data.editorMode === 'json' ? 'json' : 'form',
     reasoning: String(data.reasoning ?? ''),
     signature: String(data.signature ?? ''),
     toolCalls: data.toolCalls.map(call => ({
@@ -843,6 +844,7 @@ $(async () => {
   // 暴露工具绑定 API 供 iframe 编辑器调用
   window.SPresetToolBinding = {
     validateToolCode: validateSPresetToolCode,
+    parseToolCodeToForm: parseSPresetToolCodeToForm,
     saveToolBinding(identifier, data) {
       const { uuidv4 } = SillyTavern.getContext();
       const validation = data.code.trim() ? validateSPresetToolCode(data.code) : { valid: false, error: '' };
@@ -856,6 +858,8 @@ $(async () => {
         code: data.code,
         valid: validation.valid,
         uuid: uuidv4(),
+        editorMode: data.editorMode === 'form' ? 'form' : 'code',
+        form: data.form ? cloneSPresetData(data.form) : null,
       };
 
       // 持久化
@@ -3656,6 +3660,95 @@ function executeSPresetToolCode(code) {
     console.warn('[SPreset-ToolBinding] 执行工具代码失败:', e);
     return null;
   }
+}
+
+function extractSPresetFunctionBody(fn) {
+  if (typeof fn !== 'function') return '';
+  const source = Function.prototype.toString.call(fn).trim();
+  const firstBrace = source.indexOf('{');
+  const lastBrace = source.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    return source.slice(firstBrace + 1, lastBrace).trim();
+  }
+  const arrowIndex = source.indexOf('=>');
+  if (arrowIndex !== -1) {
+    const expression = source.slice(arrowIndex + 2).trim();
+    return expression ? `return ${expression};` : '';
+  }
+  return '';
+}
+
+function parseSPresetToolCodeToForm(code) {
+  const validation = validateSPresetToolCode(code);
+  if (!validation.valid) return { valid: false, error: validation.error || '工具代码无效' };
+  const tool = executeSPresetToolCode(code);
+  if (!tool) return { valid: false, error: '无法读取工具定义' };
+
+  const properties = tool.parameters?.properties && typeof tool.parameters.properties === 'object'
+    ? tool.parameters.properties
+    : {};
+  const supportedToolKeys = new Set([
+    'name', 'displayName', 'description', 'parameters', 'action', 'formatMessage', 'stealth',
+  ]);
+  const supportedParameterKeys = new Set(['type', 'properties', 'required']);
+  const supportedPropertyKeys = new Set(['type', 'description']);
+  const supportedTypes = new Set(['string', 'number', 'integer', 'boolean', 'array', 'object']);
+  const unsupported = [];
+  Object.keys(tool).filter(key => !supportedToolKeys.has(key)).forEach(key => unsupported.push(`工具字段 ${key}`));
+  Object.keys(tool.parameters || {}).filter(key => !supportedParameterKeys.has(key))
+    .forEach(key => unsupported.push(`parameters.${key}`));
+  if (tool.parameters?.type !== 'object') unsupported.push('parameters.type');
+  if (Array.isArray(tool.parameters?.properties)) unsupported.push('parameters.properties');
+  if (tool.parameters?.required !== undefined && !Array.isArray(tool.parameters.required)) {
+    unsupported.push('parameters.required');
+  }
+  if (tool.displayName !== undefined && typeof tool.displayName !== 'string') unsupported.push('displayName');
+  if (tool.formatMessage !== undefined && typeof tool.formatMessage !== 'function') unsupported.push('formatMessage');
+  if (tool.stealth !== undefined && typeof tool.stealth !== 'boolean') unsupported.push('stealth');
+  if (Array.isArray(tool.parameters?.required)) {
+    tool.parameters.required.filter(name => !Object.prototype.hasOwnProperty.call(properties, name))
+      .forEach(name => unsupported.push(`required 中不存在的参数 ${name}`));
+  }
+  Object.entries(properties).forEach(([name, schema]) => {
+    if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
+      unsupported.push(`参数 ${name} 的 schema`);
+      return;
+    }
+    Object.keys(schema).filter(key => !supportedPropertyKeys.has(key))
+      .forEach(key => unsupported.push(`参数 ${name}.${key}`));
+    if (typeof schema.type !== 'string' || !supportedTypes.has(schema.type)) {
+      unsupported.push(`参数 ${name}.type`);
+    }
+    if (schema.description !== undefined && typeof schema.description !== 'string') {
+      unsupported.push(`参数 ${name}.description`);
+    }
+  });
+  if (unsupported.length) {
+    return {
+      valid: false,
+      error: `包含表单模式暂不支持的高级定义（${unsupported.slice(0, 4).join('、')}），请保留代码模式`,
+    };
+  }
+  const required = new Set(Array.isArray(tool.parameters?.required) ? tool.parameters.required : []);
+  const parameters = Object.entries(properties).map(([name, schema]) => ({
+    name,
+    type: Array.isArray(schema?.type) ? schema.type[0] : schema?.type || 'string',
+    description: String(schema?.description ?? ''),
+    required: required.has(name),
+  }));
+
+  return {
+    valid: true,
+    form: {
+      name: String(tool.name ?? ''),
+      displayName: String(tool.displayName ?? ''),
+      description: String(tool.description ?? ''),
+      parameters,
+      actionBody: extractSPresetFunctionBody(tool.action),
+      formatMessageBody: extractSPresetFunctionBody(tool.formatMessage),
+      stealth: Boolean(tool.stealth),
+    },
+  };
 }
 
 /**
