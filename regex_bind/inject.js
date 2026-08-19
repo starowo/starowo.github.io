@@ -297,15 +297,6 @@ function buildSPresetGenericToolCalls(config, provider) {
   });
 }
 
-function buildSPresetGeminiMessageParts(content, toolCalls) {
-  const parts = Array.isArray(content) ? cloneSPresetData(content) : [];
-  if (!Array.isArray(content) && content !== undefined && content !== null && String(content).length > 0) {
-    parts.push({ type: 'text', text: String(content) });
-  }
-  parts.push({ type: 'tool_calls', tool_calls: toolCalls });
-  return parts;
-}
-
 function applySPresetMessageInjection(baseMessage, config, provider = getSPresetCurrentProvider()) {
   const result = [];
   const toolCalls = buildSPresetGenericToolCalls(config, provider);
@@ -341,32 +332,19 @@ function applySPresetMessageInjection(baseMessage, config, provider = getSPreset
     delete message.reasoning_content;
     delete message.signature;
   } else {
+    if (toolCalls.length > 0) message.tool_calls = toolCalls;
     if (provider.adapter === 'gemini') {
-      if (toolCalls.length > 0) {
-        // SillyTavern's Gemini converter reads structured parts directly when content is an array.
-        // Keep the original text/media parts and append its internal tool_calls part instead of
-        // setting a top-level tool_calls field, whose scalar-content normalization drops the text.
-        message.content = buildSPresetGeminiMessageParts(message.content, toolCalls);
-        delete message.tool_calls;
-      }
       if (config.reasoning) message.reasoning = config.reasoning;
-      const signatureMovedToFirstTool = toolCalls.length > 0
-        && !config.toolCalls[0]?.signature
-        && toolCalls[0].signature === config.signature;
-      if (config.signature && !signatureMovedToFirstTool) message.signature = config.signature;
+      if (config.signature) message.signature = config.signature;
     } else if (provider.adapter === 'openrouter') {
-      if (toolCalls.length > 0) message.tool_calls = toolCalls;
       if (config.reasoning) message.reasoning = config.reasoning;
       const signatureMovedToFirstTool = toolCalls.length > 0
         && !config.toolCalls[0]?.signature
         && toolCalls[0].signature === config.signature;
       if (config.signature && !signatureMovedToFirstTool) message.signature = config.signature;
     } else if (provider.adapter === 'deepseek') {
-      if (toolCalls.length > 0) message.tool_calls = toolCalls;
       if (config.reasoning) message.reasoning_content = config.reasoning;
       delete message.signature;
-    } else if (toolCalls.length > 0) {
-      message.tool_calls = toolCalls;
     }
   }
   if (!(hadEmptyPlaceholder && !hasAssistantMetadata && config.toolResults.length > 0)) {
