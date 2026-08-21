@@ -332,19 +332,26 @@ function applySPresetMessageInjection(baseMessage, config, provider = getSPreset
     delete message.reasoning_content;
     delete message.signature;
   } else {
-    if (toolCalls.length > 0) message.tool_calls = toolCalls;
     if (provider.adapter === 'gemini') {
+      if (toolCalls.length > 0) message.tool_calls = toolCalls;
       if (config.reasoning) message.reasoning = config.reasoning;
-      if (config.signature) message.signature = config.signature;
+      const signatureMovedToFirstTool = toolCalls.length > 0
+        && !config.toolCalls[0]?.signature
+        && toolCalls[0].signature === config.signature;
+      if (config.signature && !signatureMovedToFirstTool) message.signature = config.signature;
     } else if (provider.adapter === 'openrouter') {
+      if (toolCalls.length > 0) message.tool_calls = toolCalls;
       if (config.reasoning) message.reasoning = config.reasoning;
       const signatureMovedToFirstTool = toolCalls.length > 0
         && !config.toolCalls[0]?.signature
         && toolCalls[0].signature === config.signature;
       if (config.signature && !signatureMovedToFirstTool) message.signature = config.signature;
     } else if (provider.adapter === 'deepseek') {
+      if (toolCalls.length > 0) message.tool_calls = toolCalls;
       if (config.reasoning) message.reasoning_content = config.reasoning;
       delete message.signature;
+    } else if (toolCalls.length > 0) {
+      message.tool_calls = toolCalls;
     }
   }
   if (!(hadEmptyPlaceholder && !hasAssistantMetadata && config.toolResults.length > 0)) {
@@ -1295,26 +1302,28 @@ const ChatSquash = () => {
             <div class="flex-container" title="合并后处理后，将提示词按前后缀重新拆分回不同角色的独立消息">
                 <input type="checkbox" id="re_split"><span>重新拆分提示词</span>
             </div>
-            <div class="flex-container flexFlowColumn">
-                <strong>后处理脚本</strong>
-                <div class="flex-container" title="启用后处理脚本">
-                    <input type="checkbox" id="squashed_post_script_enable"><span>启用后处理脚本</span>
-                </div>
-                <div class="flex-container flexFlowColumn">
-                    <label for="squashed_post_script">
-                        脚本内容
-                    </label>
-                    <div class="flex-container">
-                        <textarea id="squashed_post_script" class="text_pole flex1 wide100p" size="35" type="text" autocomplete="off"></textarea>
-                    </div>
-                </div>
-            </div>            
-
             <hr>
+        </div>
+        <div id="chat_post_script_content" class="flex-container flexFlowColumn">
+            <strong>聊天记录后处理脚本</strong>
+            <div class="flex-container" title="启用后处理脚本">
+                <input type="checkbox" id="squashed_post_script_enable"><span>启用后处理脚本</span>
+            </div>
+            <small class="notes">
+                开启合并时，脚本参数为合并后的字符串并应返回字符串；关闭合并时，参数为原始消息对象数组，可原地修改或返回新数组。
+            </small>
+            <div class="flex-container flexFlowColumn">
+                <label for="squashed_post_script">
+                    脚本内容
+                </label>
+                <div class="flex-container">
+                    <textarea id="squashed_post_script" class="text_pole flex1 wide100p" size="35" type="text" autocomplete="off"></textarea>
+                </div>
+            </div>
         </div>
     </div>
   `;
-  const menu = addMenuSection('chat_squash', '聊天记录合并', chatSquashMenuItems);
+  const menu = addMenuSection('chat_squash', '聊天记录合并与后处理', chatSquashMenuItems);
   menu.find('#squash_enabled').on('change', function () {
     $('#squash_enabled_content').css({
       display: $(this).prop('checked') ? 'block' : 'none',
@@ -1323,6 +1332,10 @@ const ChatSquash = () => {
   });
 
   menu.find('#squash_enabled_content').on('change', function () {
+    saveSettingsFromForm();
+  });
+
+  menu.find('#chat_post_script_content').on('change', function () {
     saveSettingsFromForm();
   });
 
@@ -1427,14 +1440,14 @@ const ChatSquash = () => {
   };
 
   const handleChatCompletionPromptReady = data => {
-    if (!SPresetSettings.ChatSquash.enabled) {
-      if (Array.isArray(data?.prompt)) {
-        globalThis.SToolBookPromptCompat?.applySeamlessPromptInjection?.(data.prompt, 'SPreset/GENERATE_AFTER_DATA/bypass');
-      }
+    if (!Array.isArray(data?.prompt)) {
       return;
     }
 
-    if (!Array.isArray(data?.prompt)) {
+    const settings = SPresetSettings.ChatSquash;
+    if (!settings.enabled) {
+      postProcessOriginalMessages(data.prompt);
+      globalThis.SToolBookPromptCompat?.applySeamlessPromptInjection?.(data.prompt, 'SPreset/GENERATE_AFTER_DATA/bypass');
       return;
     }
 
@@ -1450,7 +1463,6 @@ const ChatSquash = () => {
       globalThis.SToolBookPromptCompat?.applySeamlessPromptInjection?.(data.prompt, 'SPreset/GENERATE_AFTER_DATA');
     };
     console.log('data', data);
-    const settings = SPresetSettings.ChatSquash;
     const promptManager = SPresetImports.promptManager;
     if (settings.separate_chat_history) {
       data.prompt.length = 0;
@@ -1579,6 +1591,48 @@ const ChatSquash = () => {
   ctx.eventSource.on(ctx.eventTypes.CHAT_COMPLETION_SETTINGS_READY, () => {
     syncSPresetToolRegistrations();
   });
+
+  function runPostScript(target, messageArrayMode = false) {
+    const settings = SPresetSettings.ChatSquash;
+    if (!settings.squashed_post_script_enable) {
+      return target;
+    }
+
+    const backup = messageArrayMode ? cloneSPresetData(target) : target;
+    try {
+      const processor = eval(settings.squashed_post_script);
+      if (typeof processor !== 'function') {
+        throw new TypeError('后处理脚本必须求值为函数');
+      }
+
+      const processed = processor(target);
+      if (!messageArrayMode) {
+        return processed;
+      }
+
+      // 返回 undefined 表示脚本已经原地修改；返回数组则替换内容但保留原数组引用。
+      if (processed === undefined || processed === target) {
+        return target;
+      }
+      if (!Array.isArray(processed)) {
+        throw new TypeError('关闭合并时，后处理脚本只能返回消息数组或 undefined');
+      }
+
+      target.splice(0, target.length, ...processed);
+      return target;
+    } catch (e) {
+      console.warn(messageArrayMode ? 'Message post script processing error:' : 'Squashed post script processing error:', e);
+      if (messageArrayMode) {
+        target.splice(0, target.length, ...backup);
+        return target;
+      }
+      return backup;
+    }
+  }
+
+  function postProcessOriginalMessages(messages) {
+    return runPostScript(messages, true);
+  }
 
   function squashPrompts(prompts) {
     const settings = SPresetSettings.ChatSquash;
@@ -1827,16 +1881,7 @@ const ChatSquash = () => {
       console.debug('HyperPmtProcess - \n' + prompt);
       prompt = HyperPmtProcess(prompt);
     }
-    if (SPresetSettings.ChatSquash.squashed_post_script_enable) {
-      const backup = prompt;
-      try {
-        prompt = eval(SPresetSettings.ChatSquash.squashed_post_script)(prompt);
-      } catch (e) {
-        console.warn('Squashed post script processing error:', e);
-        prompt = backup;
-      }
-    }
-    return prompt;
+    return runPostScript(prompt);
   }
 
   return loadSettingsToForm;
