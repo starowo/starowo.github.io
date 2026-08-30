@@ -30,6 +30,7 @@ let SPresetSettings = {
     enabled: false,
     script: '',
   },
+  FixedPresetName: '',
 };
 
 window.SPresetTempData = {};
@@ -61,6 +62,10 @@ const settingsDom = $(`
 
 let loadSettingsToChatSquashForm = null;
 let loadSettingsToMacroNestForm = null;
+let syncLegacySPresetRegexesToCurrentST = null;
+const spresetImportRenameMarker = Symbol('SPresetImportRename');
+let pendingSPresetImportRename = null;
+let spresetImportRenameRunning = false;
 
 (() => {
   const _originalObjectValues = Object.values;
@@ -134,18 +139,503 @@ function cloneSPresetData(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 }
 
+const SPRESET_CHAT_SQUASH_DEFAULT = Object.freeze({
+  enabled: false,
+  conditional_enabled: false,
+  conditional_tag: '',
+  separate_chat_history: false,
+  parse_clewd: true,
+  user_role_system: false,
+  role: 'assistant',
+  enable_stop_string: false,
+  stop_string: 'User:',
+  user_prefix: '\n\nUser:',
+  user_suffix: '',
+  char_prefix: '\n\nAssistant:',
+  char_suffix: '',
+  prefix_system: '',
+  suffix_system: '',
+  enable_squashed_separator: false,
+  squashed_separator_regex: false,
+  squashed_separator_string: '',
+  squashed_post_script_enable: false,
+  squashed_post_script: '',
+  re_split: false,
+});
+
+const SPRESET_REGEX_BINDING_DEFAULT = Object.freeze({
+  regexes: Object.freeze([]),
+});
+
 const SPRESET_OUTPUT_PREPROCESSING_DEFAULT = Object.freeze({
   enabled: false,
   script: '',
 });
 
-function normalizeSPresetOutputPreprocessing(value) {
-  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+const SPRESET_FIXED_PRESET_NAME_DEFAULT = '';
+
+function isSPresetPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeSPresetChatSquash(value, fallback = SPRESET_CHAT_SQUASH_DEFAULT) {
+  const fallbackSource = isSPresetPlainObject(fallback) ? fallback : SPRESET_CHAT_SQUASH_DEFAULT;
+  const source = isSPresetPlainObject(value) ? value : {};
+  const merged = { ...cloneSPresetData(fallbackSource), ...cloneSPresetData(source) };
+  const readBoolean = key => merged[key] === undefined
+    ? SPRESET_CHAT_SQUASH_DEFAULT[key]
+    : Boolean(merged[key]);
+  const readString = key => merged[key] == null
+    ? SPRESET_CHAT_SQUASH_DEFAULT[key]
+    : String(merged[key]);
+  const role = ['system', 'user', 'assistant', 'follow'].includes(String(merged.role))
+    ? String(merged.role)
+    : SPRESET_CHAT_SQUASH_DEFAULT.role;
+
   return {
-    enabled: Boolean(source.enabled),
-    script: String(source.script || ''),
+    ...merged,
+    enabled: readBoolean('enabled'),
+    conditional_enabled: readBoolean('conditional_enabled'),
+    conditional_tag: readString('conditional_tag'),
+    separate_chat_history: readBoolean('separate_chat_history'),
+    parse_clewd: readBoolean('parse_clewd'),
+    user_role_system: readBoolean('user_role_system'),
+    role,
+    enable_stop_string: readBoolean('enable_stop_string'),
+    stop_string: readString('stop_string'),
+    user_prefix: readString('user_prefix'),
+    user_suffix: readString('user_suffix'),
+    char_prefix: readString('char_prefix'),
+    char_suffix: readString('char_suffix'),
+    prefix_system: readString('prefix_system'),
+    suffix_system: readString('suffix_system'),
+    enable_squashed_separator: readBoolean('enable_squashed_separator'),
+    squashed_separator_regex: readBoolean('squashed_separator_regex'),
+    squashed_separator_string: readString('squashed_separator_string'),
+    squashed_post_script_enable: readBoolean('squashed_post_script_enable'),
+    squashed_post_script: readString('squashed_post_script'),
+    re_split: readBoolean('re_split'),
   };
 }
+
+function normalizeSPresetRegexBinding(value, fallback = SPRESET_REGEX_BINDING_DEFAULT) {
+  const fallbackSource = isSPresetPlainObject(fallback) ? fallback : SPRESET_REGEX_BINDING_DEFAULT;
+  const source = isSPresetPlainObject(value) ? value : {};
+  const merged = { ...cloneSPresetData(fallbackSource), ...cloneSPresetData(source) };
+  return {
+    ...merged,
+    regexes: Array.isArray(merged.regexes) ? cloneSPresetData(merged.regexes) : [],
+  };
+}
+
+function normalizeSPresetMacroNest(value, fallback = false) {
+  return value === undefined ? Boolean(fallback) : Boolean(value);
+}
+
+function normalizeSPresetOutputPreprocessing(value, fallback = SPRESET_OUTPUT_PREPROCESSING_DEFAULT) {
+  const fallbackSource = isSPresetPlainObject(fallback) ? fallback : SPRESET_OUTPUT_PREPROCESSING_DEFAULT;
+  const source = isSPresetPlainObject(value) ? value : {};
+  const merged = { ...cloneSPresetData(fallbackSource), ...cloneSPresetData(source) };
+  return {
+    ...merged,
+    enabled: merged.enabled === undefined ? SPRESET_OUTPUT_PREPROCESSING_DEFAULT.enabled : Boolean(merged.enabled),
+    script: merged.script == null ? SPRESET_OUTPUT_PREPROCESSING_DEFAULT.script : String(merged.script),
+  };
+}
+
+function normalizeSPresetFixedPresetName(value, fallback = SPRESET_FIXED_PRESET_NAME_DEFAULT) {
+  return value === undefined || value === null ? String(fallback || '') : String(value).trim();
+}
+
+function normalizeSPresetSettings(value) {
+  const source = isSPresetPlainObject(value) ? value : {};
+  return {
+    ...cloneSPresetData(source),
+    RegexBinding: normalizeSPresetRegexBinding(source.RegexBinding),
+    ChatSquash: normalizeSPresetChatSquash(source.ChatSquash),
+    MacroNest: normalizeSPresetMacroNest(source.MacroNest),
+    ToolBindings: isSPresetPlainObject(source.ToolBindings) ? cloneSPresetData(source.ToolBindings) : {},
+    MessageInjections: isSPresetPlainObject(source.MessageInjections) ? cloneSPresetData(source.MessageInjections) : {},
+    OutputPreprocessing: normalizeSPresetOutputPreprocessing(source.OutputPreprocessing),
+    FixedPresetName: normalizeSPresetFixedPresetName(source.FixedPresetName),
+  };
+}
+
+function getSPresetFeatures() {
+  let regexBinding = normalizeSPresetRegexBinding(SPresetSettings.RegexBinding);
+  const nativeRegexes = ctx.chatCompletionSettings?.extensions?.regex_scripts;
+  if (versionNumber >= 11305 && Array.isArray(nativeRegexes)) {
+    regexBinding = normalizeSPresetRegexBinding({
+      ...regexBinding,
+      regexes: nativeRegexes,
+    });
+  }
+  return {
+    chatSquash: normalizeSPresetChatSquash(SPresetSettings.ChatSquash),
+    macroNest: normalizeSPresetMacroNest(SPresetSettings.MacroNest),
+    regexBinding,
+    outputPreprocessing: normalizeSPresetOutputPreprocessing(SPresetSettings.OutputPreprocessing),
+    fixedPresetName: normalizeSPresetFixedPresetName(SPresetSettings.FixedPresetName),
+  };
+}
+
+function normalizeSPresetFeatures(value, fallbackSettings = SPresetSettings) {
+  const source = isSPresetPlainObject(value) ? value : {};
+  const fallback = isSPresetPlainObject(fallbackSettings) ? fallbackSettings : {};
+  const readFeature = (camelKey, persistedKey) => {
+    if (Object.prototype.hasOwnProperty.call(source, camelKey)) return source[camelKey];
+    if (Object.prototype.hasOwnProperty.call(source, persistedKey)) return source[persistedKey];
+    return fallback[persistedKey];
+  };
+  const mergeObjects = (base, update) => ({
+    ...(isSPresetPlainObject(base) ? cloneSPresetData(base) : {}),
+    ...(isSPresetPlainObject(update) ? cloneSPresetData(update) : {}),
+  });
+  const chatSquash = readFeature('chatSquash', 'ChatSquash');
+  const regexBinding = readFeature('regexBinding', 'RegexBinding');
+  const outputPreprocessing = readFeature('outputPreprocessing', 'OutputPreprocessing');
+  const fixedPresetName = readFeature('fixedPresetName', 'FixedPresetName');
+
+  return {
+    chatSquash: normalizeSPresetChatSquash(
+      mergeObjects(fallback.ChatSquash, chatSquash),
+      fallback.ChatSquash,
+    ),
+    macroNest: normalizeSPresetMacroNest(readFeature('macroNest', 'MacroNest'), fallback.MacroNest),
+    regexBinding: normalizeSPresetRegexBinding(
+      mergeObjects(fallback.RegexBinding, regexBinding),
+      fallback.RegexBinding,
+    ),
+    outputPreprocessing: normalizeSPresetOutputPreprocessing(
+      mergeObjects(fallback.OutputPreprocessing, outputPreprocessing),
+    ),
+    fixedPresetName: normalizeSPresetFixedPresetName(fixedPresetName, fallback.FixedPresetName),
+  };
+}
+
+function compileSPresetFunctionExpression(script, label) {
+  const source = String(script || '').trim().replace(/;+\s*$/, '');
+  if (!source) throw new TypeError(`${label}脚本不能为空`);
+  let processor;
+  try {
+    processor = Function(`"use strict"; return (\n${source}\n);`)();
+  } catch (error) {
+    throw new SyntaxError(`${label}脚本无法解析：${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (typeof processor !== 'function') throw new TypeError(`${label}脚本必须是函数表达式`);
+  return processor;
+}
+
+function validateSPresetFeatures(value, fallbackSettings = SPresetSettings) {
+  const features = normalizeSPresetFeatures(value, fallbackSettings);
+  const errors = [];
+  if (!isSPresetPlainObject(value)) {
+    errors.push('附加功能配置必须是对象');
+  } else {
+    const rawFeature = (camelKey, persistedKey) => {
+      if (Object.prototype.hasOwnProperty.call(value, camelKey)) return value[camelKey];
+      if (Object.prototype.hasOwnProperty.call(value, persistedKey)) return value[persistedKey];
+      return undefined;
+    };
+    const rawChatSquash = rawFeature('chatSquash', 'ChatSquash');
+    const rawRegexBinding = rawFeature('regexBinding', 'RegexBinding');
+    const rawOutputPreprocessing = rawFeature('outputPreprocessing', 'OutputPreprocessing');
+    const rawFixedPresetName = rawFeature('fixedPresetName', 'FixedPresetName');
+    if (rawChatSquash !== undefined && !isSPresetPlainObject(rawChatSquash)) {
+      errors.push('聊天记录合并配置必须是对象');
+    }
+    if (rawRegexBinding !== undefined) {
+      if (!isSPresetPlainObject(rawRegexBinding)) {
+        errors.push('预设正则绑定配置必须是对象');
+      } else if (Object.prototype.hasOwnProperty.call(rawRegexBinding, 'regexes')
+        && !Array.isArray(rawRegexBinding.regexes)) {
+        errors.push('预设正则绑定的 regexes 必须是数组');
+      }
+    }
+    if (rawOutputPreprocessing !== undefined && !isSPresetPlainObject(rawOutputPreprocessing)) {
+      errors.push('输出预处理配置必须是对象');
+    }
+    if (rawFixedPresetName !== undefined && typeof rawFixedPresetName !== 'string') {
+      errors.push('固定预设名必须是字符串');
+    }
+  }
+
+  if (features.chatSquash.squashed_post_script_enable) {
+    try {
+      // Only compile the expression. Never invoke a post-processing script while validating Editor data.
+      compileSPresetFunctionExpression(features.chatSquash.squashed_post_script, '聊天记录后处理');
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  const ids = new Set();
+  features.regexBinding.regexes.forEach((regex, index) => {
+    const label = `预设正则 #${index + 1}`;
+    if (!isSPresetPlainObject(regex)) {
+      errors.push(`${label} 必须是对象`);
+      return;
+    }
+    const id = String(regex.id || '').trim();
+    if (!id) errors.push(`${label} 缺少 id`);
+    if (id && ids.has(id)) errors.push(`预设正则 id 重复：${id}`);
+    if (id) ids.add(id);
+    if (!String(regex.scriptName || '').trim()) errors.push(`${label} 缺少名称`);
+    if (!String(regex.findRegex || '').trim()) errors.push(`${label} 缺少查找表达式`);
+    if (!Array.isArray(regex.placement) || regex.placement.length === 0) {
+      errors.push(`${label} 至少需要一个作用位置`);
+    }
+  });
+
+  if (features.outputPreprocessing.enabled) {
+    const validation = validateSPresetOutputPreprocessing(features.outputPreprocessing.script);
+    if (!validation.valid) errors.push(`输出预处理：${validation.error}`);
+  }
+
+  return { valid: errors.length === 0, errors, features };
+}
+
+function applySPresetFeaturesToSettings(settings, features) {
+  settings.ChatSquash = cloneSPresetData(features.chatSquash);
+  settings.MacroNest = normalizeSPresetMacroNest(features.macroNest);
+  settings.RegexBinding = cloneSPresetData(features.regexBinding);
+  settings.OutputPreprocessing = cloneSPresetData(features.outputPreprocessing);
+  settings.FixedPresetName = normalizeSPresetFixedPresetName(features.fixedPresetName);
+  return settings;
+}
+
+function readFixedPresetNameFromImportedPreset(preset) {
+  if (!isSPresetPlainObject(preset)) return '';
+  const directSettings = preset.extensions?.SPreset;
+  if (isSPresetPlainObject(directSettings)) {
+    const directName = normalizeSPresetFixedPresetName(
+      directSettings.FixedPresetName ?? directSettings.fixedPresetName,
+    );
+    if (directName) return directName;
+  }
+
+  const settingsPrompt = Array.isArray(preset.prompts)
+    ? preset.prompts.find(prompt => prompt?.identifier === 'SPresetSettings')
+    : null;
+  if (typeof settingsPrompt?.content !== 'string') return '';
+  try {
+    const promptSettings = JSON.parse(settingsPrompt.content);
+    return normalizeSPresetFixedPresetName(
+      promptSettings?.FixedPresetName ?? promptSettings?.fixedPresetName,
+    );
+  } catch {
+    return '';
+  }
+}
+
+function clearFixedPresetNameInImportedPreset(preset) {
+  if (!isSPresetPlainObject(preset)) return preset;
+  const directSettings = preset.extensions?.SPreset;
+  if (isSPresetPlainObject(directSettings)) {
+    directSettings.FixedPresetName = '';
+    if (Object.prototype.hasOwnProperty.call(directSettings, 'fixedPresetName')) {
+      directSettings.fixedPresetName = '';
+    }
+  }
+
+  const settingsPrompt = Array.isArray(preset.prompts)
+    ? preset.prompts.find(prompt => prompt?.identifier === 'SPresetSettings')
+    : null;
+  if (typeof settingsPrompt?.content === 'string') {
+    try {
+      const promptSettings = JSON.parse(settingsPrompt.content);
+      if (isSPresetPlainObject(promptSettings)) {
+        promptSettings.FixedPresetName = '';
+        if (Object.prototype.hasOwnProperty.call(promptSettings, 'fixedPresetName')) {
+          promptSettings.fixedPresetName = '';
+        }
+        settingsPrompt.content = JSON.stringify(promptSettings);
+      }
+    } catch {
+      // An invalid legacy settings prompt is left untouched.
+    }
+  }
+  return preset;
+}
+
+function installSPresetFixedPresetNameImportHook() {
+  const importReadyEvent = ctx.eventTypes.OAI_PRESET_IMPORT_READY || 'oai_preset_import_ready';
+  const presetChangedEvent = ctx.eventTypes.PRESET_CHANGED || 'preset_changed';
+
+  const armRename = async result => {
+    const targetName = readFixedPresetNameFromImportedPreset(result?.data);
+    if (!targetName || !isSPresetPlainObject(result?.data)) {
+      pendingSPresetImportRename = null;
+      return;
+    }
+
+    const token = Symbol('SPresetImportRenameTransaction');
+    Object.defineProperty(result.data, spresetImportRenameMarker, {
+      value: token,
+      enumerable: true,
+      configurable: true,
+    });
+
+    const sanitize = globalThis.SPresetImports?.getSanitizedFilename;
+    let sourceName = normalizeSPresetFixedPresetName(result.presetName);
+    let normalizedTargetName = targetName;
+    if (typeof sanitize === 'function') {
+      try {
+        [sourceName, normalizedTargetName] = await Promise.all([
+          sanitize(sourceName),
+          sanitize(normalizedTargetName),
+        ]);
+      } catch (error) {
+        console.warn('[SPreset] 固定预设名净化失败，本次导入不会自动改名:', error);
+        pendingSPresetImportRename = null;
+        return;
+      }
+    }
+
+    if (!sourceName || !normalizedTargetName) {
+      pendingSPresetImportRename = null;
+      return;
+    }
+    pendingSPresetImportRename = {
+      sourceName,
+      targetName: normalizedTargetName,
+      token,
+    };
+  };
+
+  const finishRename = async event => {
+    if (spresetImportRenameRunning || !pendingSPresetImportRename || event?.apiId !== 'openai') return;
+    const manager = globalThis.SPresetImports?.getPresetManager?.('openai');
+    if (!manager) return;
+
+    const transaction = pendingSPresetImportRename;
+    const importedPreset = manager.getCompletionPresetByName?.(event.name);
+    if (!importedPreset || importedPreset[spresetImportRenameMarker] !== transaction.token) return;
+
+    spresetImportRenameRunning = true;
+    try {
+      const oldName = String(event.name || manager.getSelectedPresetName?.() || transaction.sourceName);
+      let targetName = transaction.targetName;
+      const equalsName = globalThis.SPresetImports?.equalsIgnoreCaseAndAccents;
+      const namesEqual = (left, right) => typeof equalsName === 'function'
+        ? equalsName(left, right)
+        : left.localeCompare(right, undefined, { sensitivity: 'base' }) === 0;
+      const sameName = namesEqual(oldName, targetName);
+      const renamedPreset = clearFixedPresetNameInImportedPreset(cloneSPresetData(importedPreset));
+
+      if (sameName) {
+        await manager.savePreset(oldName, renamedPreset, { skipUpdate: true });
+        clearFixedPresetNameInImportedPreset(importedPreset);
+        reloadSettings();
+        SPresetSettings.FixedPresetName = '';
+        persistSPresetSettings();
+        pendingSPresetImportRename = null;
+        globalThis.toastr?.success?.(`已应用固定预设名：${oldName}`);
+        return;
+      }
+
+      const conflictingName = manager.getAllPresets?.().find(name => (
+        namesEqual(String(name), targetName) && !namesEqual(String(name), oldName)
+      ));
+      if (conflictingName) {
+        const overwrite = await ctx.callGenericPopup(
+          '固定预设名对应的预设已经存在。是否用本次导入的预设覆盖它？',
+          ctx.POPUP_TYPE.CONFIRM,
+          '',
+          { okButton: '覆盖并改名', cancelButton: '取消' },
+        );
+        if (!overwrite) {
+          pendingSPresetImportRename = null;
+          globalThis.toastr?.info?.('已取消自动改名，固定预设名仍保留在导入的预设中');
+          return;
+        }
+        targetName = String(conflictingName);
+      }
+
+      await ctx.eventSource.emit(ctx.eventTypes.PRESET_RENAMED_BEFORE || 'preset_renamed_before', {
+        apiId: 'openai',
+        oldName,
+        newName: targetName,
+      });
+      const targetApplied = new Promise(resolve => {
+        let settled = false;
+        function listener(changed) {
+          if (changed?.apiId !== 'openai' || !namesEqual(String(changed.name || ''), targetName)) return;
+          settled = true;
+          clearTimeout(timeoutId);
+          ctx.eventSource.removeListener(presetChangedEvent, listener);
+          resolve(String(changed.name || targetName));
+        }
+        const timeoutId = setTimeout(() => {
+          if (settled) return;
+          ctx.eventSource.removeListener(presetChangedEvent, listener);
+          resolve(null);
+        }, 10000);
+        ctx.eventSource.on(presetChangedEvent, listener);
+      });
+      await manager.savePreset(targetName, renamedPreset);
+      const appliedName = await targetApplied;
+      if (!appliedName) throw new Error(`等待新预设“${targetName}”载入超时`);
+      const actualNewName = String(appliedName || manager.getSelectedPresetName?.() || targetName);
+      const deleted = await manager.deletePreset(oldName);
+      if (!deleted) {
+        Object.defineProperty(importedPreset, spresetImportRenameMarker, {
+          value: transaction.token,
+          enumerable: true,
+          configurable: true,
+        });
+        manager.updateList?.(oldName, importedPreset);
+        throw new Error(`旧预设“${oldName}”删除失败`);
+      }
+      await ctx.eventSource.emit(ctx.eventTypes.PRESET_RENAMED || 'preset_renamed', {
+        apiId: 'openai',
+        oldName,
+        newName: actualNewName,
+      });
+      reloadSettings();
+      pendingSPresetImportRename = null;
+      globalThis.toastr?.success?.(`预设已自动改名为“${actualNewName}”，固定预设名已清除`);
+    } catch (error) {
+      // The persisted marker remains in the imported source preset on failure.
+      // Disarm only this runtime transaction so an unrelated preset switch cannot consume it.
+      pendingSPresetImportRename = null;
+      console.error('[SPreset] 导入后自动改名失败:', error);
+      globalThis.toastr?.error?.(
+        `自动改名失败，固定预设名已保留：${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      spresetImportRenameRunning = false;
+    }
+  };
+
+  if (typeof ctx.eventSource.makeFirst === 'function') {
+    ctx.eventSource.makeFirst(importReadyEvent, armRename);
+  } else {
+    ctx.eventSource.on(importReadyEvent, armRename);
+  }
+  ctx.eventSource.on(presetChangedEvent, finishRename);
+}
+
+function syncSPresetRegexesToCurrentST() {
+  const regexes = normalizeSPresetRegexBinding(SPresetSettings.RegexBinding).regexes;
+  if (versionNumber >= 11305) {
+    if (!ctx.chatCompletionSettings.extensions) ctx.chatCompletionSettings.extensions = {};
+    ctx.chatCompletionSettings.extensions.regex_scripts = cloneSPresetData(regexes);
+    if (!ctx.extensionSettings.preset_allowed_regex) ctx.extensionSettings.preset_allowed_regex = {};
+    if (!Array.isArray(ctx.extensionSettings.preset_allowed_regex.openai)) {
+      ctx.extensionSettings.preset_allowed_regex.openai = [];
+    }
+    const presetName = ctx.chatCompletionSettings.preset_settings_openai;
+    if (presetName && !ctx.extensionSettings.preset_allowed_regex.openai.includes(presetName)) {
+      ctx.extensionSettings.preset_allowed_regex.openai.push(presetName);
+    }
+    return;
+  }
+  if (typeof syncLegacySPresetRegexesToCurrentST === 'function') {
+    syncLegacySPresetRegexesToCurrentST(cloneSPresetData(regexes));
+  }
+}
+
 
 function compileSPresetOutputPreprocessor(script) {
   const source = String(script || '').trim().replace(/;\s*$/, '');
@@ -1166,6 +1656,14 @@ $(async () => {
       items: ['streamingProcessor'],
       from: './script',
     },
+    {
+      items: ['getPresetManager'],
+      from: './scripts/preset-manager',
+    },
+    {
+      items: ['equalsIgnoreCaseAndAccents', 'getSanitizedFilename'],
+      from: './scripts/utils',
+    },
   ]);
 
   importFromModule('STVersionImports', [
@@ -1238,6 +1736,7 @@ $(async () => {
   });
 
   reloadSettings();
+  installSPresetFixedPresetNameImportHook();
   installSPresetOutputPreprocessingHooks();
   injectSPresetMenu();
   RegexBinding();
@@ -1342,6 +1841,12 @@ $(async () => {
   // refresh registrations once. This avoids partial saves and repeated
   // execution of tool-definition code when the Editor saves a workspace.
   window.SPresetEditorBridge = {
+    getPresetFeatures() {
+      return cloneSPresetData(getSPresetFeatures());
+    },
+    validatePresetFeatures(features) {
+      return cloneSPresetData(validateSPresetFeatures(features));
+    },
     getOutputPreprocessing() {
       return cloneSPresetData(normalizeSPresetOutputPreprocessing(SPresetSettings.OutputPreprocessing));
     },
@@ -1352,9 +1857,20 @@ $(async () => {
       return cloneSPresetData(await previewSPresetOutputPreprocessing(script, chunks));
     },
     commitBindings(data = {}) {
-      const previousSettings = SPresetSettings;
-      const nextSettings = cloneSPresetData(SPresetSettings);
+      // On 1.13.5+, the native preset regex array is authoritative and may have
+      // been edited since SPreset's compatibility copy was last refreshed.
+      // Include it in both the staged baseline and a possible rollback snapshot.
+      const previousSettings = normalizeSPresetSettings(SPresetSettings);
+      const nativeRegexes = ctx.chatCompletionSettings?.extensions?.regex_scripts;
+      if (versionNumber >= 11305 && Array.isArray(nativeRegexes)) {
+        previousSettings.RegexBinding = normalizeSPresetRegexBinding({
+          ...previousSettings.RegexBinding,
+          regexes: nativeRegexes,
+        });
+      }
+      const nextSettings = cloneSPresetData(previousSettings);
       const { uuidv4 } = SillyTavern.getContext();
+      let shouldSyncRegexes = false;
       if (!nextSettings.ToolBindings) nextSettings.ToolBindings = {};
       if (!nextSettings.MessageInjections) nextSettings.MessageInjections = {};
 
@@ -1385,8 +1901,25 @@ $(async () => {
         delete nextSettings.ToolBindings[identifier];
         delete nextSettings.MessageInjections[identifier];
       }
-      if (Object.prototype.hasOwnProperty.call(data, 'outputPreprocessing')) {
-        const outputPreprocessing = normalizeSPresetOutputPreprocessing(data.outputPreprocessing);
+
+      const hasFeatures = Object.prototype.hasOwnProperty.call(data, 'features');
+      const featurePayload = isSPresetPlainObject(data.features) ? data.features : {};
+      const featuresHaveOutputPreprocessing = Object.prototype.hasOwnProperty.call(featurePayload, 'outputPreprocessing')
+        || Object.prototype.hasOwnProperty.call(featurePayload, 'OutputPreprocessing');
+      if (hasFeatures) {
+        const validation = validateSPresetFeatures(data.features, nextSettings);
+        if (!validation.valid) return { valid: false, errors: validation.errors };
+        applySPresetFeaturesToSettings(nextSettings, validation.features);
+        shouldSyncRegexes = Object.prototype.hasOwnProperty.call(featurePayload, 'regexBinding')
+          || Object.prototype.hasOwnProperty.call(featurePayload, 'RegexBinding');
+      }
+
+      // Backward compatibility for Editors that still commit this field at the root.
+      if (Object.prototype.hasOwnProperty.call(data, 'outputPreprocessing') && !featuresHaveOutputPreprocessing) {
+        const outputPreprocessing = normalizeSPresetOutputPreprocessing({
+          ...normalizeSPresetOutputPreprocessing(nextSettings.OutputPreprocessing),
+          ...(isSPresetPlainObject(data.outputPreprocessing) ? data.outputPreprocessing : {}),
+        });
         if (outputPreprocessing.enabled) {
           const validation = validateSPresetOutputPreprocessing(outputPreprocessing.script);
           if (!validation.valid) return { valid: false, errors: [validation.error] };
@@ -1396,12 +1929,14 @@ $(async () => {
 
       try {
         SPresetSettings = nextSettings;
+        if (shouldSyncRegexes) syncSPresetRegexesToCurrentST();
         persistSPresetSettings();
         syncSPresetToolRegistrations();
         return { valid: true, errors: [] };
       } catch (error) {
         SPresetSettings = previousSettings;
         try {
+          if (shouldSyncRegexes) syncSPresetRegexesToCurrentST();
           persistSPresetSettings();
           syncSPresetToolRegistrations();
         } catch (rollbackError) {
@@ -1498,33 +2033,7 @@ function substituteParamsRecursive(
 }
 
 function reloadSettings() {
-  const defaultPresetSettings = {
-    ChatSquash: {
-      enabled: false,
-      separate_chat_history: false,
-      parse_clewd: true,
-      user_role_system: false,
-      role: 'assistant',
-      stop_string: 'User:',
-      user_prefix: '\n\nUser:',
-      user_suffix: '',
-      char_prefix: '\n\nAssistant:',
-      char_suffix: '',
-      prefix_system: '',
-      suffix_system: '',
-      enable_squashed_separator: false,
-      squashed_separator_regex: false,
-      squashed_separator_string: '',
-      squashed_post_script_enable: false,
-      squashed_post_script: '',
-      re_split: false,
-    },
-    RegexBinding: {},
-    MacroNest: false,
-    ToolBindings: {},
-    MessageInjections: {},
-    OutputPreprocessing: cloneSPresetData(SPRESET_OUTPUT_PREPROCESSING_DEFAULT),
-  };
+  const defaultPresetSettings = normalizeSPresetSettings({});
   const defaultGlobalSettings = {
     RegexBinding: {},
   };
@@ -1538,21 +2047,13 @@ function reloadSettings() {
     }
   }
   const temp1 = ctx.chatCompletionSettings.extensions.SPreset;
-  if (temp1 && !temp1.ChatSquash) {
-    temp1.ChatSquash = defaultPresetSettings.ChatSquash;
-  }
-  if (temp1 && !temp1.ToolBindings) {
-    temp1.ToolBindings = {};
-  }
-  if (temp1 && !temp1.MessageInjections) {
-    temp1.MessageInjections = {};
-  }
-  if (temp1) {
-    temp1.OutputPreprocessing = normalizeSPresetOutputPreprocessing(temp1.OutputPreprocessing);
-  }
   const temp2 = ctx.extensionSettings.SPreset;
-  SPresetSettings = temp1 || defaultPresetSettings;
-  SGlobalSettings = temp2 || defaultGlobalSettings;
+  SPresetSettings = normalizeSPresetSettings(temp1 || defaultPresetSettings);
+  ctx.chatCompletionSettings.extensions.SPreset = SPresetSettings;
+  SGlobalSettings = isSPresetPlainObject(temp2) ? temp2 : defaultGlobalSettings;
+  if (!isSPresetPlainObject(SGlobalSettings.RegexBinding)) {
+    SGlobalSettings.RegexBinding = {};
+  }
 }
 
 function injectSPresetMenu() {
@@ -2462,6 +2963,26 @@ const RegexBinding = () => {
   const extensions = ctx.extensionSettings;
   const presetRegexes = getRegexesFromPreset();
   const lockedRegexes = loadLockedRegexes();
+
+  // The legacy regex extension executes preset scripts through its global list.
+  // Keep a closure-backed synchronizer so the modern Editor can update that list
+  // without duplicating the old-version compatibility rules outside this module.
+  syncLegacySPresetRegexesToCurrentST = regexes => {
+    const nextRegexes = Array.isArray(regexes) ? cloneSPresetData(regexes) : [];
+    const lockedToPrepend = [];
+    for (const lockedRegex of lockedRegexes) {
+      const index = nextRegexes.findIndex(regex => regex.id === lockedRegex.id);
+      if (index === -1) lockedToPrepend.push(cloneSPresetData(lockedRegex));
+      else nextRegexes[index] = cloneSPresetData(lockedRegex);
+    }
+    nextRegexes.unshift(...lockedToPrepend);
+    presetRegexes.length = 0;
+    presetRegexes.push(...nextRegexes);
+    updateSTRegexes();
+    Promise.resolve(renderPresetRegexesSafely()).catch(error => {
+      console.warn('[SPreset RegexBinding] 刷新旧版正则列表失败:', error);
+    });
+  };
 
   // Load saved activation order if available
   if (SGlobalSettings.RegexBinding && SGlobalSettings.RegexBinding.activationOrder) {
