@@ -26,6 +26,10 @@ let SPresetSettings = {
   MacroNest: false,
   ToolBindings: {},
   MessageInjections: {},
+  OutputPreprocessing: {
+    enabled: false,
+    script: '',
+  },
 };
 
 window.SPresetTempData = {};
@@ -91,13 +95,15 @@ function importFromModule(container, imports) {
   for (const importItem of imports) {
     injectContent += `import { ${importItem.items.join(', ')} } from "${importItem.from}.js";\n`;
   }
-  injectContent += `\nconst ${container} = {`;
+  injectContent += `\nconst ${container} = {};`;
   for (const importItem of imports) {
     for (const item of importItem.items) {
-      injectContent += `\n  ${item}: ${item},`;
+      // Keep module exports live. This matters for mutable exports such as
+      // script.js' streamingProcessor, which is replaced for every generation.
+      injectContent += `\nObject.defineProperty(${container}, '${item}', { enumerable: true, get: () => ${item} });`;
     }
   }
-  injectContent += `\n};\n`;
+  injectContent += `\n`;
   injectContent += `\nwindow.${container} = ${container};\n`;
   injectContent += `
   const data = {
@@ -126,6 +132,340 @@ function persistSPresetSettings() {
 
 function cloneSPresetData(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
+const SPRESET_OUTPUT_PREPROCESSING_DEFAULT = Object.freeze({
+  enabled: false,
+  script: '',
+});
+
+function normalizeSPresetOutputPreprocessing(value) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  return {
+    enabled: Boolean(source.enabled),
+    script: String(source.script || ''),
+  };
+}
+
+function compileSPresetOutputPreprocessor(script) {
+  const source = String(script || '').trim().replace(/;\s*$/, '');
+  if (!source) {
+    throw new TypeError('输出预处理脚本不能为空');
+  }
+
+  let processor;
+  try {
+    processor = Function(`"use strict"; return (\n${source}\n);`)();
+  } catch (error) {
+    throw new SyntaxError(`输出预处理脚本无法解析：${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (typeof processor !== 'function') {
+    throw new TypeError('输出预处理脚本必须求值为函数');
+  }
+  return processor;
+}
+
+function validateSPresetOutputPreprocessing(script) {
+  try {
+    compileSPresetOutputPreprocessor(script);
+    return { valid: true, error: '' };
+  } catch (error) {
+    return { valid: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+function normalizeSPresetOutputProcessorResult(result) {
+  if (typeof result === 'string') {
+    return { output: result, hold: '', state: undefined };
+  }
+  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+    throw new TypeError('输出预处理脚本必须返回字符串或 { output, hold }');
+  }
+
+  const hasOutput = Object.prototype.hasOwnProperty.call(result, 'output')
+    || Object.prototype.hasOwnProperty.call(result, 'emit')
+    || Object.prototype.hasOwnProperty.call(result, 'text')
+    || Object.prototype.hasOwnProperty.call(result, 'content');
+  if (!hasOutput) {
+    throw new TypeError('输出预处理结果缺少 output');
+  }
+  const output = Object.prototype.hasOwnProperty.call(result, 'output')
+    ? result.output
+    : Object.prototype.hasOwnProperty.call(result, 'emit')
+      ? result.emit
+      : Object.prototype.hasOwnProperty.call(result, 'text')
+        ? result.text
+        : result.content;
+  return {
+    output: output == null ? '' : String(output),
+    hold: result.hold == null ? '' : String(result.hold),
+    state: result.state,
+  };
+}
+
+function createSPresetOutputPreprocessingSession(script, options = {}) {
+  let processor = compileSPresetOutputPreprocessor(script);
+  let raw = '';
+  let output = '';
+  let hold = '';
+  let state = {};
+  let failed = false;
+  const stream = Boolean(options.stream);
+  const channel = String(options.channel || 'main');
+
+  const snapshot = (emitted = '') => ({ raw, output, hold, emitted, failed });
+  const reset = () => {
+    processor = compileSPresetOutputPreprocessor(script);
+    raw = '';
+    output = '';
+    hold = '';
+    state = {};
+    failed = false;
+  };
+
+  const push = async (chunk, final = false) => {
+    const incoming = chunk == null ? '' : String(chunk);
+    raw += incoming;
+    if (failed) {
+      output = raw;
+      return snapshot(incoming);
+    }
+
+    const previousHold = hold;
+    const buffer = previousHold + incoming;
+    try {
+      const rawResult = await processor({
+        buffer,
+        chunk: incoming,
+        hold: previousHold,
+        output,
+        raw,
+        final: Boolean(final),
+        stream,
+        state,
+        channel,
+      });
+      const result = normalizeSPresetOutputProcessorResult(rawResult);
+      let emitted = result.output;
+      hold = result.hold;
+      if (result.state !== undefined) state = result.state;
+
+      // hold is temporary by contract. Never silently lose it at EOF even if
+      // a user script forgets to release it in its final call.
+      if (final && hold) {
+        emitted += hold;
+        hold = '';
+      }
+      output += emitted;
+      return snapshot(emitted);
+    } catch (error) {
+      failed = true;
+      hold = '';
+      output = raw;
+      console.error(`[SPreset Output Preprocessing] ${channel} 处理失败，已回退为原始输出：`, error);
+      return snapshot(incoming);
+    }
+  };
+
+  return {
+    async updateCumulative(value, final = false) {
+      const cumulative = value == null ? '' : String(value);
+      if (!cumulative.startsWith(raw)) {
+        // Some providers can revise an already yielded prefix. Replay the new
+        // cumulative value in a fresh session so state and hold stay coherent.
+        reset();
+        return push(cumulative, final);
+      }
+      const delta = cumulative.slice(raw.length);
+      if (!delta && !final) return snapshot();
+      return push(delta, final);
+    },
+    async finish() {
+      return push('', true);
+    },
+    snapshot,
+  };
+}
+
+async function previewSPresetOutputPreprocessing(script, chunks) {
+  const sourceChunks = Array.isArray(chunks) ? chunks.map(value => String(value ?? '')) : [String(chunks ?? '')];
+  const stream = sourceChunks.length > 1;
+  const session = createSPresetOutputPreprocessingSession(script, { stream, channel: 'preview' });
+  const steps = [];
+  let cumulativeRaw = '';
+  for (const chunk of sourceChunks) {
+    cumulativeRaw += chunk;
+    const previousHold = session.snapshot().hold;
+    const result = await session.updateCumulative(cumulativeRaw, !stream);
+    steps.push({
+      index: steps.length,
+      chunk,
+      buffer: previousHold + chunk,
+      output: result.emitted,
+      hold: result.hold,
+      accumulated: result.output,
+      final: !stream,
+    });
+  }
+  let finalResult = session.snapshot();
+  if (stream) {
+    const finalBuffer = finalResult.hold;
+    finalResult = await session.finish();
+    steps.push({
+      index: steps.length,
+      chunk: '',
+      buffer: finalBuffer,
+      output: finalResult.emitted,
+      hold: finalResult.hold,
+      accumulated: finalResult.output,
+      final: true,
+    });
+  }
+  return { valid: true, output: finalResult.output, hold: finalResult.hold, steps };
+}
+
+function wrapSPresetOutputGenerator(originalGenerator, settings) {
+  return async function* (...args) {
+    const mainSession = createSPresetOutputPreprocessingSession(settings.script, { stream: true, channel: 'main' });
+    const swipeSessions = new Map();
+    let lastPacket = null;
+    let lastText = '';
+    let lastSwipes = [];
+
+    for await (const packet of originalGenerator.apply(this, args)) {
+      const sourcePacket = packet && typeof packet === 'object' ? packet : { text: String(packet ?? '') };
+      const mainResult = await mainSession.updateCumulative(sourcePacket.text);
+      const swipes = Array.isArray(sourcePacket.swipes) ? [] : sourcePacket.swipes;
+      if (Array.isArray(sourcePacket.swipes)) {
+        for (let index = 0; index < sourcePacket.swipes.length; index += 1) {
+          if (!swipeSessions.has(index)) {
+            swipeSessions.set(index, createSPresetOutputPreprocessingSession(settings.script, {
+              stream: true,
+              channel: `swipe:${index}`,
+            }));
+          }
+          const result = await swipeSessions.get(index).updateCumulative(sourcePacket.swipes[index]);
+          swipes.push(result.output);
+        }
+      }
+
+      lastPacket = sourcePacket;
+      lastText = mainResult.output;
+      lastSwipes = Array.isArray(swipes) ? swipes : [];
+      yield { ...sourcePacket, text: mainResult.output, ...(Array.isArray(swipes) ? { swipes } : {}) };
+    }
+
+    const finalMain = await mainSession.finish();
+    const finalSwipes = [...lastSwipes];
+    for (const [index, session] of swipeSessions) {
+      finalSwipes[index] = (await session.finish()).output;
+    }
+
+    const swipesChanged = finalSwipes.some((value, index) => value !== lastSwipes[index]);
+    if (lastPacket && (finalMain.output !== lastText || swipesChanged)) {
+      // A synthetic last packet flushes held tails before ST finalizes the
+      // message. Do not replay token logprobs for this bookkeeping packet.
+      yield {
+        ...lastPacket,
+        text: finalMain.output,
+        ...(Array.isArray(lastPacket.swipes) ? { swipes: finalSwipes } : {}),
+        logprobs: null,
+      };
+    }
+  };
+}
+
+function getSPresetStreamingProcessor() {
+  try {
+    return globalThis.SPresetImports?.streamingProcessor || SillyTavern.getContext()?.streamingProcessor || null;
+  } catch {
+    return null;
+  }
+}
+
+function hookSPresetStreamingOutputPreprocessing() {
+  const settings = normalizeSPresetOutputPreprocessing(SPresetSettings.OutputPreprocessing);
+  if (!settings.enabled) return;
+  const validation = validateSPresetOutputPreprocessing(settings.script);
+  if (!validation.valid) {
+    console.warn('[SPreset Output Preprocessing] 已跳过无效脚本：', validation.error);
+    return;
+  }
+
+  const streamingProcessor = getSPresetStreamingProcessor();
+  if (!streamingProcessor || streamingProcessor.__spresetOutputPreprocessingHooked) return;
+  const originalGenerate = streamingProcessor.generate;
+  if (typeof originalGenerate !== 'function') return;
+
+  Object.defineProperty(streamingProcessor, '__spresetOutputPreprocessingHooked', { value: true, configurable: true });
+  Object.defineProperty(streamingProcessor, '__spresetOutputPreprocessingActive', { value: true, configurable: true });
+  streamingProcessor.generate = async function (...args) {
+    if (!this.__spresetOutputGeneratorWrapped && typeof this.generator === 'function') {
+      this.generator = wrapSPresetOutputGenerator(this.generator, settings);
+      Object.defineProperty(this, '__spresetOutputGeneratorWrapped', { value: true, configurable: true });
+    }
+    return originalGenerate.apply(this, args);
+  };
+}
+
+let spresetOutputGenerationContext = null;
+const spresetOutputProcessedMessages = new WeakMap();
+
+function beginSPresetOutputGeneration(type, _options, dryRun) {
+  if (dryRun) return;
+  const currentContext = SillyTavern.getContext();
+  const lastMessage = currentContext.chat?.[currentContext.chat.length - 1];
+  const shouldPreservePrefix = ['continue', 'append', 'appendFinal'].includes(String(type));
+  spresetOutputGenerationContext = {
+    type: String(type || ''),
+    prefix: shouldPreservePrefix && typeof lastMessage?.mes === 'string' ? lastMessage.mes : '',
+  };
+}
+
+async function preprocessSPresetNonStreamingMessage(messageId, type) {
+  const settings = normalizeSPresetOutputPreprocessing(SPresetSettings.OutputPreprocessing);
+  if (!settings.enabled || !['normal', 'swipe', 'continue', 'append', 'appendFinal', 'regenerate'].includes(String(type))) return;
+
+  // Streaming output already passed through the generator wrapper. Its final
+  // MESSAGE_RECEIVED event must not run the same script a second time.
+  if (getSPresetStreamingProcessor()?.__spresetOutputPreprocessingActive) return;
+
+  const currentContext = SillyTavern.getContext();
+  const message = currentContext.chat?.[Number(messageId)];
+  if (!message || message.is_user || message.is_system || typeof message.mes !== 'string') return;
+  const swipeKey = String(message.swipe_id ?? 'message');
+  const processedBySwipe = spresetOutputProcessedMessages.get(message);
+  if (processedBySwipe?.get(swipeKey) === message.mes) return;
+
+  const validation = validateSPresetOutputPreprocessing(settings.script);
+  if (!validation.valid) {
+    console.warn('[SPreset Output Preprocessing] 已跳过无效脚本：', validation.error);
+    return;
+  }
+
+  const context = spresetOutputGenerationContext;
+  const prefix = context && ['continue', 'append', 'appendFinal'].includes(String(type))
+    && message.mes.startsWith(context.prefix)
+    ? context.prefix
+    : '';
+  const source = message.mes.slice(prefix.length);
+  const session = createSPresetOutputPreprocessingSession(settings.script, { stream: false, channel: 'main' });
+  const result = await session.updateCumulative(source, true);
+  message.mes = prefix + result.output;
+
+  const nextProcessedBySwipe = processedBySwipe || new Map();
+  nextProcessedBySwipe.set(swipeKey, message.mes);
+  if (!processedBySwipe) spresetOutputProcessedMessages.set(message, nextProcessedBySwipe);
+}
+
+let spresetOutputHooksInstalled = false;
+function installSPresetOutputPreprocessingHooks() {
+  if (spresetOutputHooksInstalled) return;
+  spresetOutputHooksInstalled = true;
+  ctx.eventSource.makeFirst(ctx.eventTypes.GENERATION_STARTED, beginSPresetOutputGeneration);
+  ctx.eventSource.makeFirst(ctx.eventTypes.MESSAGE_RECEIVED, preprocessSPresetNonStreamingMessage);
+  ctx.eventSource.on(ctx.eventTypes.CHAT_COMPLETION_SETTINGS_READY, hookSPresetStreamingOutputPreprocessing);
+  ctx.eventSource.on(ctx.eventTypes.TEXT_COMPLETION_SETTINGS_READY, hookSPresetStreamingOutputPreprocessing);
 }
 
 function getSPresetCurrentProvider() {
@@ -819,8 +1159,12 @@ $(async () => {
     });
   importFromModule('SPresetImports', [
     {
-      items: ['promptManager', 'MessageCollection', 'Message', "sendOpenAIRequest"],
+      items: ['promptManager', 'MessageCollection', 'Message', 'sendOpenAIRequest'],
       from: './scripts/openai',
+    },
+    {
+      items: ['streamingProcessor'],
+      from: './script',
     },
   ]);
 
@@ -894,6 +1238,7 @@ $(async () => {
   });
 
   reloadSettings();
+  installSPresetOutputPreprocessingHooks();
   injectSPresetMenu();
   RegexBinding();
   loadSettingsToChatSquashForm = ChatSquash();
@@ -997,6 +1342,15 @@ $(async () => {
   // refresh registrations once. This avoids partial saves and repeated
   // execution of tool-definition code when the Editor saves a workspace.
   window.SPresetEditorBridge = {
+    getOutputPreprocessing() {
+      return cloneSPresetData(normalizeSPresetOutputPreprocessing(SPresetSettings.OutputPreprocessing));
+    },
+    validateOutputPreprocessing(script) {
+      return validateSPresetOutputPreprocessing(script);
+    },
+    async previewOutputPreprocessing(script, chunks) {
+      return cloneSPresetData(await previewSPresetOutputPreprocessing(script, chunks));
+    },
     commitBindings(data = {}) {
       const previousSettings = SPresetSettings;
       const nextSettings = cloneSPresetData(SPresetSettings);
@@ -1030,6 +1384,14 @@ $(async () => {
       for (const identifier of data.deletedIdentifiers || []) {
         delete nextSettings.ToolBindings[identifier];
         delete nextSettings.MessageInjections[identifier];
+      }
+      if (Object.prototype.hasOwnProperty.call(data, 'outputPreprocessing')) {
+        const outputPreprocessing = normalizeSPresetOutputPreprocessing(data.outputPreprocessing);
+        if (outputPreprocessing.enabled) {
+          const validation = validateSPresetOutputPreprocessing(outputPreprocessing.script);
+          if (!validation.valid) return { valid: false, errors: [validation.error] };
+        }
+        nextSettings.OutputPreprocessing = outputPreprocessing;
       }
 
       try {
@@ -1161,6 +1523,7 @@ function reloadSettings() {
     MacroNest: false,
     ToolBindings: {},
     MessageInjections: {},
+    OutputPreprocessing: cloneSPresetData(SPRESET_OUTPUT_PREPROCESSING_DEFAULT),
   };
   const defaultGlobalSettings = {
     RegexBinding: {},
@@ -1183,6 +1546,9 @@ function reloadSettings() {
   }
   if (temp1 && !temp1.MessageInjections) {
     temp1.MessageInjections = {};
+  }
+  if (temp1) {
+    temp1.OutputPreprocessing = normalizeSPresetOutputPreprocessing(temp1.OutputPreprocessing);
   }
   const temp2 = ctx.extensionSettings.SPreset;
   SPresetSettings = temp1 || defaultPresetSettings;
