@@ -29,6 +29,7 @@ let SPresetSettings = {
   OutputPreprocessing: {
     enabled: false,
     script: '',
+    consumeToolCalls: false,
   },
   FixedPresetName: '',
 };
@@ -170,6 +171,7 @@ const SPRESET_REGEX_BINDING_DEFAULT = Object.freeze({
 const SPRESET_OUTPUT_PREPROCESSING_DEFAULT = Object.freeze({
   enabled: false,
   script: '',
+  consumeToolCalls: false,
 });
 
 const SPRESET_FIXED_PRESET_NAME_DEFAULT = '';
@@ -240,6 +242,9 @@ function normalizeSPresetOutputPreprocessing(value, fallback = SPRESET_OUTPUT_PR
     ...merged,
     enabled: merged.enabled === undefined ? SPRESET_OUTPUT_PREPROCESSING_DEFAULT.enabled : Boolean(merged.enabled),
     script: merged.script == null ? SPRESET_OUTPUT_PREPROCESSING_DEFAULT.script : String(merged.script),
+    consumeToolCalls: merged.consumeToolCalls === undefined
+      ? SPRESET_OUTPUT_PREPROCESSING_DEFAULT.consumeToolCalls
+      : Boolean(merged.consumeToolCalls),
   };
 }
 
@@ -814,13 +819,298 @@ async function previewSPresetOutputPreprocessing(script, chunks) {
   return { valid: true, output: finalResult.output, hold: finalResult.hold, steps };
 }
 
+const SPRESET_TOOL_ARGUMENT_TEXT_KEYS = new Set([
+  'content',
+  'text',
+  'output',
+  'answer',
+  'message',
+  'response',
+]);
+
+function collectSPresetToolCallArguments(value) {
+  const argumentsList = [];
+  const visited = new WeakSet();
+  const hasOwn = (target, key) => Object.prototype.hasOwnProperty.call(target, key);
+
+  const visit = target => {
+    if (Array.isArray(target)) {
+      target.forEach(visit);
+      return;
+    }
+    if (!target || typeof target !== 'object' || visited.has(target)) return;
+    visited.add(target);
+
+    // OpenAI/DeepSeek normalized call (also SillyTavern's normalized stream form).
+    if (target.function && typeof target.function === 'object' && hasOwn(target.function, 'arguments')) {
+      argumentsList.push(target.function.arguments);
+      return;
+    }
+
+    // Gemini may appear either as a part wrapper or as the functionCall itself.
+    if (target.functionCall && typeof target.functionCall === 'object') {
+      visit(target.functionCall);
+      return;
+    }
+    if (hasOwn(target, 'args') && (hasOwn(target, 'name') || hasOwn(target, 'id'))) {
+      argumentsList.push(target.args);
+      return;
+    }
+
+    // Claude tool_use blocks keep their arguments in input.
+    if (hasOwn(target, 'input')
+      && (target.type === 'tool_use' || hasOwn(target, 'name') || hasOwn(target, 'id'))) {
+      argumentsList.push(target.input);
+      return;
+    }
+
+    // Legacy OpenAI function_call.
+    if (hasOwn(target, 'arguments') && hasOwn(target, 'name')) {
+      argumentsList.push(target.arguments);
+      return;
+    }
+    if (target.function_call && typeof target.function_call === 'object') {
+      visit(target.function_call);
+      return;
+    }
+
+    // Known containers only: do not mistake an arbitrary argument object for a call.
+    for (const key of ['tool_calls', 'toolCalls', 'calls']) {
+      if (hasOwn(target, key)) visit(target[key]);
+    }
+  };
+
+  visit(value);
+  return argumentsList;
+}
+
+function parseSPresetToolCallArgument(value) {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+
+  // Standard function.arguments is JSON text. Plain strings used by a few
+  // compatible providers remain valid, but malformed object/array JSON must
+  // fail closed so the original tool call can still be executed by ST.
+  const looksStructured = /^[[{"]/.test(trimmed);
+  try {
+    return JSON.parse(trimmed);
+  } catch (error) {
+    if (looksStructured) throw error;
+    return value;
+  }
+}
+
+function stringifySPresetToolCallArgument(value) {
+  const parsed = parseSPresetToolCallArgument(value);
+  if (typeof parsed === 'string') return parsed;
+
+  if (isSPresetPlainObject(parsed)) {
+    const keys = Object.keys(parsed);
+    if (keys.length === 1) {
+      const onlyKey = keys[0];
+      const onlyValue = parsed[onlyKey];
+      if (SPRESET_TOOL_ARGUMENT_TEXT_KEYS.has(onlyKey) || typeof onlyValue === 'string') {
+        const unwrapped = typeof onlyValue === 'string' ? onlyValue : JSON.stringify(onlyValue);
+        if (unwrapped === undefined) throw new TypeError('工具调用参数内容无法转换为文本');
+        return unwrapped;
+      }
+    }
+  }
+
+  const serialized = JSON.stringify(parsed);
+  if (serialized === undefined) throw new TypeError('工具调用参数无法转换为文本');
+  return serialized;
+}
+
+function formatSPresetToolCallArguments(toolCalls) {
+  const argumentsList = collectSPresetToolCallArguments(toolCalls);
+  if (argumentsList.length === 0) throw new TypeError('没有找到可消费的工具调用参数');
+  return argumentsList.map(stringifySPresetToolCallArgument).join('\n');
+}
+
+function appendSPresetToolArgumentText(source, toolText) {
+  const current = source == null ? '' : String(source);
+  const addition = toolText == null ? '' : String(toolText);
+  if (!current) return addition;
+  if (!addition) return current;
+  return `${current}${current.endsWith('\n') ? '' : '\n'}${addition}`;
+}
+
+function appendSPresetResponseText(content, addition) {
+  if (content == null || typeof content === 'string') {
+    return appendSPresetToolArgumentText(content, addition);
+  }
+  if (Array.isArray(content)) {
+    const nextContent = content.map(part => (
+      part && typeof part === 'object' ? { ...part } : part
+    ));
+    for (let index = nextContent.length - 1; index >= 0; index -= 1) {
+      const part = nextContent[index];
+      const isVisibleTextPart = part
+        && typeof part === 'object'
+        && typeof part.text === 'string'
+        && (!part.type || part.type === 'text' || part.type === 'output_text');
+      if (isVisibleTextPart) {
+        part.text = appendSPresetToolArgumentText(part.text, addition);
+        return nextContent;
+      }
+      if (typeof part === 'string') {
+        nextContent[index] = appendSPresetToolArgumentText(part, addition);
+        return nextContent;
+      }
+    }
+    return [...nextContent, { type: 'text', text: addition }];
+  }
+  if (typeof content === 'object' && typeof content.text === 'string') {
+    return { ...content, text: appendSPresetToolArgumentText(content.text, addition) };
+  }
+  throw new TypeError('无法安全地把工具参数写入响应正文');
+}
+
+function stripSPresetGeminiFunctionParts(parts) {
+  return parts.map(part => {
+    if (!part || typeof part !== 'object' || !part.functionCall) return part;
+    const nextPart = { ...part };
+    delete nextPart.functionCall;
+    delete nextPart.thoughtSignature;
+    return Object.keys(nextPart).length > 0 ? nextPart : null;
+  }).filter(Boolean);
+}
+
+function stripSPresetChoiceToolCalls(choice) {
+  if (!choice || typeof choice !== 'object') return;
+  const message = choice.message;
+  if (message && typeof message === 'object') {
+    delete message.tool_calls;
+    delete message.function_call;
+  }
+  delete choice.tool_calls;
+  delete choice.function_call;
+  if (choice.finish_reason === 'tool_calls' || choice.finish_reason === 'function_call') {
+    choice.finish_reason = 'stop';
+  }
+}
+
+/**
+ * Consume tool calls in a non-streaming chat-completions response clone.
+ * Returns null when the response contains no supported call. Any unsafe or
+ * malformed shape throws, allowing the fetch wrapper to return the untouched
+ * original JSON and preserve normal SillyTavern tool execution.
+ */
+function consumeSPresetToolCallsFromResponse(data) {
+  if (!data || typeof data !== 'object') return null;
+  const nextData = typeof structuredClone === 'function'
+    ? structuredClone(data)
+    : JSON.parse(JSON.stringify(data));
+
+  // Native Gemini responses are wrapped by ST as responseContent plus an OAI
+  // choice. Remove the functionCall source ToolManager reads and mirror the
+  // resulting parameter text into both visible response representations.
+  const geminiParts = nextData?.responseContent?.parts;
+  const geminiCalls = Array.isArray(geminiParts)
+    ? geminiParts.filter(part => part?.functionCall)
+    : [];
+  if (geminiCalls.length > 0) {
+    const toolText = formatSPresetToolCallArguments(geminiCalls);
+    nextData.responseContent.parts = [
+      ...stripSPresetGeminiFunctionParts(geminiParts),
+      { text: toolText },
+    ];
+    if (Array.isArray(nextData.choices)) {
+      nextData.choices.forEach(stripSPresetChoiceToolCalls);
+      const mainChoice = nextData.choices.find(choice => choice?.index === 0) || nextData.choices[0];
+      if (!mainChoice || !mainChoice.message || typeof mainChoice.message !== 'object') {
+        throw new TypeError('Gemini 响应缺少可写入的正文位置');
+      }
+      mainChoice.message.content = appendSPresetResponseText(mainChoice.message.content, toolText);
+    }
+    return nextData;
+  }
+
+  // Native Claude response: preserve thinking/text blocks, remove tool_use,
+  // and add one ordinary text block containing all tool arguments.
+  if (Array.isArray(nextData.content)) {
+    const claudeCalls = nextData.content.filter(block => block?.type === 'tool_use');
+    if (claudeCalls.length > 0) {
+      const toolText = formatSPresetToolCallArguments(claudeCalls);
+      nextData.content = [
+        ...nextData.content.filter(block => block?.type !== 'tool_use'),
+        { type: 'text', text: toolText },
+      ];
+      if (nextData.stop_reason === 'tool_use') nextData.stop_reason = 'end_turn';
+      return nextData;
+    }
+  }
+
+  // OAI/DeepSeek-compatible responses. Each choice remains independent so
+  // multi-swipe text, logprobs and all unrelated provider metadata survive.
+  if (Array.isArray(nextData.choices)) {
+    let consumed = false;
+    for (const choice of nextData.choices) {
+      const message = choice?.message;
+      if (!message || typeof message !== 'object') continue;
+      const calls = [];
+      if (Array.isArray(message.tool_calls)) calls.push(...message.tool_calls);
+      else if (message.tool_calls && typeof message.tool_calls === 'object') calls.push(message.tool_calls);
+      if (message.function_call && typeof message.function_call === 'object') calls.push(message.function_call);
+      if (calls.length === 0) continue;
+
+      const toolText = formatSPresetToolCallArguments(calls);
+      message.content = appendSPresetResponseText(message.content, toolText);
+      stripSPresetChoiceToolCalls(choice);
+      consumed = true;
+    }
+    if (consumed) return nextData;
+  }
+
+  // Direct Gemini candidate shape (used by a few compatible proxies).
+  if (Array.isArray(nextData.candidates)) {
+    let consumed = false;
+    for (const candidate of nextData.candidates) {
+      const parts = candidate?.content?.parts;
+      if (!Array.isArray(parts)) continue;
+      const calls = parts.filter(part => part?.functionCall);
+      if (calls.length === 0) continue;
+      const toolText = formatSPresetToolCallArguments(calls);
+      candidate.content.parts = [
+        ...stripSPresetGeminiFunctionParts(parts),
+        { text: toolText },
+      ];
+      consumed = true;
+    }
+    if (consumed) return nextData;
+  }
+
+  // Cohere-compatible message shape. Not required for provider selection, but
+  // it is safe to support because ToolManager recognizes this exact field.
+  const directCalls = nextData?.message?.tool_calls;
+  if (directCalls && typeof directCalls === 'object') {
+    const toolText = formatSPresetToolCallArguments(directCalls);
+    const currentContent = nextData.message.content;
+    if (Array.isArray(currentContent)) {
+      const textBlock = currentContent.find(block => block && typeof block.text === 'string');
+      if (textBlock) textBlock.text = appendSPresetToolArgumentText(textBlock.text, toolText);
+      else currentContent.unshift({ type: 'text', text: toolText });
+    } else {
+      nextData.message.content = [{ type: 'text', text: toolText }];
+    }
+    delete nextData.message.tool_calls;
+    return nextData;
+  }
+
+  return null;
+}
+
 function wrapSPresetOutputGenerator(originalGenerator, settings) {
   return async function* (...args) {
     const mainSession = createSPresetOutputPreprocessingSession(settings.script, { stream: true, channel: 'main' });
     const swipeSessions = new Map();
     let lastPacket = null;
+    let lastRawText = '';
     let lastText = '';
     let lastSwipes = [];
+    let lastToolCalls = null;
 
     for await (const packet of originalGenerator.apply(this, args)) {
       const sourcePacket = packet && typeof packet === 'object' ? packet : { text: String(packet ?? '') };
@@ -840,25 +1130,65 @@ function wrapSPresetOutputGenerator(originalGenerator, settings) {
       }
 
       lastPacket = sourcePacket;
+      lastRawText = sourcePacket.text == null ? '' : String(sourcePacket.text);
       lastText = mainResult.output;
       lastSwipes = Array.isArray(swipes) ? swipes : [];
-      yield { ...sourcePacket, text: mainResult.output, ...(Array.isArray(swipes) ? { swipes } : {}) };
+      const packetToolCalls = sourcePacket.toolCalls;
+      const hasPacketToolCalls = (Array.isArray(packetToolCalls) && packetToolCalls.length > 0)
+        || (packetToolCalls && typeof packetToolCalls === 'object' && Object.keys(packetToolCalls).length > 0);
+      if (settings.consumeToolCalls && hasPacketToolCalls) {
+        // ST yields the same cumulative structure while deltas fill it in. Keep
+        // the latest reference for EOF formatting, but never expose it to the
+        // StreamingProcessor where it would trigger ToolManager execution.
+        lastToolCalls = packetToolCalls;
+      }
+      yield {
+        ...sourcePacket,
+        text: mainResult.output,
+        ...(Array.isArray(swipes) ? { swipes } : {}),
+        ...(settings.consumeToolCalls ? { toolCalls: [] } : {}),
+      };
+    }
+
+    let toolConsumptionFailed = false;
+    if (settings.consumeToolCalls && lastToolCalls) {
+      if (mainSession.snapshot().failed) {
+        toolConsumptionFailed = true;
+      } else {
+        try {
+          const toolText = formatSPresetToolCallArguments(lastToolCalls);
+          // Feed argument text into the same session before EOF. Stateful scripts
+          // (notably a Unicode decoder holding a trailing "\\u") therefore see
+          // one continuous stream and retain their existing hold/state behavior.
+          const result = await mainSession.updateCumulative(appendSPresetToolArgumentText(lastRawText, toolText));
+          toolConsumptionFailed = result.failed;
+        } catch (error) {
+          toolConsumptionFailed = true;
+          console.error('[SPreset Output Preprocessing] 工具调用参数消费失败，已恢复酒馆原工具调用：', error);
+        }
+      }
     }
 
     const finalMain = await mainSession.finish();
+    if (settings.consumeToolCalls && lastToolCalls && finalMain.failed) {
+      toolConsumptionFailed = true;
+    }
     const finalSwipes = [...lastSwipes];
     for (const [index, session] of swipeSessions) {
       finalSwipes[index] = (await session.finish()).output;
     }
 
     const swipesChanged = finalSwipes.some((value, index) => value !== lastSwipes[index]);
-    if (lastPacket && (finalMain.output !== lastText || swipesChanged)) {
+    if (lastPacket && (finalMain.output !== lastText || swipesChanged || toolConsumptionFailed)) {
       // A synthetic last packet flushes held tails before ST finalizes the
       // message. Do not replay token logprobs for this bookkeeping packet.
       yield {
         ...lastPacket,
-        text: finalMain.output,
+        text: toolConsumptionFailed ? lastText : finalMain.output,
         ...(Array.isArray(lastPacket.swipes) ? { swipes: finalSwipes } : {}),
+        ...(settings.consumeToolCalls
+          ? { toolCalls: toolConsumptionFailed ? lastToolCalls : [] }
+          : {}),
         logprobs: null,
       };
     }
@@ -948,8 +1278,100 @@ async function preprocessSPresetNonStreamingMessage(messageId, type) {
   if (!processedBySwipe) spresetOutputProcessedMessages.set(message, nextProcessedBySwipe);
 }
 
+function isSPresetChatCompletionGenerateRequest(input, init) {
+  const rawUrl = typeof input === 'string' || input instanceof URL ? String(input) : input?.url;
+  if (!rawUrl) return false;
+  try {
+    const baseUrl = globalThis.location?.href || 'http://localhost/';
+    const requestUrl = new URL(rawUrl, baseUrl);
+    const pageUrl = new URL(baseUrl);
+    const method = String(init?.method || input?.method || 'GET').toUpperCase();
+    return method === 'POST'
+      && requestUrl.origin === pageUrl.origin
+      && requestUrl.pathname === '/api/backends/chat-completions/generate';
+  } catch {
+    return false;
+  }
+}
+
+async function isSPresetStreamingFetchRequest(input, init) {
+  let body = init?.body;
+  if (typeof body !== 'string' && input && typeof input.clone === 'function') {
+    try {
+      body = await input.clone().text();
+    } catch {
+      return false;
+    }
+  }
+  if (typeof body !== 'string') return false;
+  try {
+    return JSON.parse(body)?.stream === true;
+  } catch {
+    return false;
+  }
+}
+
+let spresetOutputFetchHookInstalled = false;
+function installSPresetOutputFetchHook() {
+  if (spresetOutputFetchHookInstalled || typeof globalThis.fetch !== 'function') return;
+  spresetOutputFetchHookInstalled = true;
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async function (...args) {
+    const [input, init] = args;
+    const isTargetRequest = isSPresetChatCompletionGenerateRequest(input, init);
+    // Start the network request immediately. Reading a cloned Request body in
+    // parallel covers callers that pass `new Request(...)` without delaying it.
+    const streamingRequest = isTargetRequest
+      ? isSPresetStreamingFetchRequest(input, init)
+      : Promise.resolve(false);
+    const responsePromise = originalFetch.apply(this, args);
+    const [response, isStreamingRequest] = await Promise.all([responsePromise, streamingRequest]);
+    if (!isTargetRequest || isStreamingRequest || !response?.ok) return response;
+
+    // SSE is handled by wrapSPresetOutputGenerator. Requiring a JSON content
+    // type also prevents this narrowly-scoped hook from consuming an unusual
+    // streaming/proxy response whose request body could not be inspected.
+    const contentType = String(response.headers?.get?.('content-type') || '').toLowerCase();
+    if (contentType.includes('text/event-stream')
+      || (!contentType.includes('application/json') && !contentType.includes('+json'))) {
+      return response;
+    }
+
+    const originalJson = response.json.bind(response);
+    try {
+      Object.defineProperty(response, 'json', {
+        configurable: true,
+        value: async () => {
+          const data = await originalJson();
+          const settings = normalizeSPresetOutputPreprocessing(SPresetSettings.OutputPreprocessing);
+          if (!settings.enabled || !settings.consumeToolCalls) return data;
+
+          const validation = validateSPresetOutputPreprocessing(settings.script);
+          if (!validation.valid) return data;
+
+          try {
+            return consumeSPresetToolCallsFromResponse(data) || data;
+          } catch (error) {
+            // The parsed data object has never been modified; transformation
+            // happens on a clone, so returning it restores normal ST behavior.
+            console.error('[SPreset Output Preprocessing] 非流式工具调用参数消费失败，已返回原响应：', error);
+            return data;
+          }
+        },
+      });
+    } catch (error) {
+      // A locked-down Response implementation is rare, but must not break the
+      // request or accidentally consume a tool call when wrapping is unsafe.
+      console.warn('[SPreset Output Preprocessing] 无法包装非流式响应，已保持原行为：', error);
+    }
+    return response;
+  };
+}
+
 let spresetOutputHooksInstalled = false;
 function installSPresetOutputPreprocessingHooks() {
+  installSPresetOutputFetchHook();
   if (spresetOutputHooksInstalled) return;
   spresetOutputHooksInstalled = true;
   ctx.eventSource.makeFirst(ctx.eventTypes.GENERATION_STARTED, beginSPresetOutputGeneration);
