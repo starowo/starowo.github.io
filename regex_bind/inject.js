@@ -30,6 +30,10 @@ let SPresetSettings = {
     enabled: false,
     script: '',
     consumeToolCalls: false,
+    toolCallFormatter: {
+      enabled: false,
+      script: '',
+    },
   },
   FixedPresetName: '',
 };
@@ -172,6 +176,10 @@ const SPRESET_OUTPUT_PREPROCESSING_DEFAULT = Object.freeze({
   enabled: false,
   script: '',
   consumeToolCalls: false,
+  toolCallFormatter: Object.freeze({
+    enabled: false,
+    script: '',
+  }),
 });
 
 const SPRESET_FIXED_PRESET_NAME_DEFAULT = '';
@@ -238,6 +246,11 @@ function normalizeSPresetOutputPreprocessing(value, fallback = SPRESET_OUTPUT_PR
   const fallbackSource = isSPresetPlainObject(fallback) ? fallback : SPRESET_OUTPUT_PREPROCESSING_DEFAULT;
   const source = isSPresetPlainObject(value) ? value : {};
   const merged = { ...cloneSPresetData(fallbackSource), ...cloneSPresetData(source) };
+  const fallbackFormatter = isSPresetPlainObject(fallbackSource.toolCallFormatter)
+    ? fallbackSource.toolCallFormatter
+    : SPRESET_OUTPUT_PREPROCESSING_DEFAULT.toolCallFormatter;
+  const sourceFormatter = isSPresetPlainObject(source.toolCallFormatter) ? source.toolCallFormatter : {};
+  const toolCallFormatter = { ...cloneSPresetData(fallbackFormatter), ...cloneSPresetData(sourceFormatter) };
   return {
     ...merged,
     enabled: merged.enabled === undefined ? SPRESET_OUTPUT_PREPROCESSING_DEFAULT.enabled : Boolean(merged.enabled),
@@ -245,6 +258,11 @@ function normalizeSPresetOutputPreprocessing(value, fallback = SPRESET_OUTPUT_PR
     consumeToolCalls: merged.consumeToolCalls === undefined
       ? SPRESET_OUTPUT_PREPROCESSING_DEFAULT.consumeToolCalls
       : Boolean(merged.consumeToolCalls),
+    toolCallFormatter: {
+      ...toolCallFormatter,
+      enabled: toolCallFormatter.enabled === undefined ? false : Boolean(toolCallFormatter.enabled),
+      script: toolCallFormatter.script == null ? '' : String(toolCallFormatter.script),
+    },
   };
 }
 
@@ -359,6 +377,10 @@ function validateSPresetFeatures(value, fallbackSettings = SPresetSettings) {
     }
     if (rawOutputPreprocessing !== undefined && !isSPresetPlainObject(rawOutputPreprocessing)) {
       errors.push('输出预处理配置必须是对象');
+    } else if (isSPresetPlainObject(rawOutputPreprocessing)
+      && Object.prototype.hasOwnProperty.call(rawOutputPreprocessing, 'toolCallFormatter')
+      && !isSPresetPlainObject(rawOutputPreprocessing.toolCallFormatter)) {
+      errors.push('工具调用格式化配置必须是对象');
     }
     if (rawFixedPresetName !== undefined && typeof rawFixedPresetName !== 'string') {
       errors.push('固定预设名必须是字符串');
@@ -395,6 +417,10 @@ function validateSPresetFeatures(value, fallbackSettings = SPresetSettings) {
   if (features.outputPreprocessing.enabled) {
     const validation = validateSPresetOutputPreprocessing(features.outputPreprocessing.script);
     if (!validation.valid) errors.push(`输出预处理：${validation.error}`);
+  }
+  if (features.outputPreprocessing.consumeToolCalls && features.outputPreprocessing.toolCallFormatter.enabled) {
+    const validation = validateSPresetToolCallFormatter(features.outputPreprocessing.toolCallFormatter.script);
+    if (!validation.valid) errors.push(`工具调用格式化：${validation.error}`);
   }
 
   return { valid: errors.length === 0, errors, features };
@@ -929,6 +955,127 @@ function formatSPresetToolCallArguments(toolCalls) {
   return argumentsList.map(stringifySPresetToolCallArgument).join('\n');
 }
 
+function collectSPresetToolCallsForFormatting(value) {
+  const calls = [];
+  const visited = new WeakSet();
+  const hasOwn = (target, key) => Object.prototype.hasOwnProperty.call(target, key);
+  const append = (target, argumentValue, inheritedSignature = '') => {
+    calls.push({
+      id: String(target?.id ?? ''),
+      name: String(target?.name ?? target?.function?.name ?? ''),
+      arguments: parseSPresetToolCallArgument(argumentValue),
+      signature: String(target?.signature ?? target?.thoughtSignature ?? inheritedSignature ?? ''),
+    });
+  };
+
+  const visit = (target, inheritedSignature = '') => {
+    if (Array.isArray(target)) {
+      target.forEach(item => visit(item, inheritedSignature));
+      return;
+    }
+    if (!target || typeof target !== 'object' || visited.has(target)) return;
+    visited.add(target);
+
+    if (target.function && typeof target.function === 'object' && hasOwn(target.function, 'arguments')) {
+      append(target, target.function.arguments, inheritedSignature);
+      return;
+    }
+    if (target.functionCall && typeof target.functionCall === 'object') {
+      visit(target.functionCall, target.thoughtSignature || inheritedSignature);
+      return;
+    }
+    if (hasOwn(target, 'args') && (hasOwn(target, 'name') || hasOwn(target, 'id'))) {
+      append(target, target.args, inheritedSignature);
+      return;
+    }
+    if (hasOwn(target, 'input')
+      && (target.type === 'tool_use' || hasOwn(target, 'name') || hasOwn(target, 'id'))) {
+      append(target, target.input, inheritedSignature);
+      return;
+    }
+    if (hasOwn(target, 'arguments') && hasOwn(target, 'name')) {
+      append(target, target.arguments, inheritedSignature);
+      return;
+    }
+    if (target.function_call && typeof target.function_call === 'object') {
+      visit(target.function_call, inheritedSignature);
+      return;
+    }
+    for (const key of ['tool_calls', 'toolCalls', 'calls']) {
+      if (hasOwn(target, key)) visit(target[key], inheritedSignature);
+    }
+  };
+
+  visit(value);
+  return calls;
+}
+
+function compileSPresetToolCallFormatter(script) {
+  return compileSPresetFunctionExpression(script, '工具调用格式化');
+}
+
+function validateSPresetToolCallFormatter(script) {
+  try {
+    compileSPresetToolCallFormatter(script);
+    return { valid: true, error: '' };
+  } catch (error) {
+    return { valid: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+function normalizeSPresetToolCallFormatterResult(result) {
+  if (typeof result === 'string') return result;
+  if (!isSPresetPlainObject(result)) {
+    throw new TypeError('工具调用格式化脚本必须返回字符串或包含 output/text/content 的对象');
+  }
+  const output = Object.prototype.hasOwnProperty.call(result, 'output')
+    ? result.output
+    : Object.prototype.hasOwnProperty.call(result, 'text')
+      ? result.text
+      : result.content;
+  if (output === undefined) {
+    throw new TypeError('工具调用格式化脚本返回对象缺少 output/text/content');
+  }
+  return output == null ? '' : String(output);
+}
+
+async function formatSPresetToolCalls(toolCalls, settings, options = {}) {
+  const defaultText = formatSPresetToolCallArguments(toolCalls);
+  const formatter = normalizeSPresetOutputPreprocessing(settings).toolCallFormatter;
+  if (!formatter.enabled) return defaultText;
+
+  const calls = collectSPresetToolCallsForFormatting(toolCalls);
+  if (calls.length === 0) throw new TypeError('没有找到可格式化的工具调用');
+  const processor = compileSPresetToolCallFormatter(formatter.script);
+  const result = await processor({
+    calls: cloneSPresetData(calls),
+    defaultText,
+    provider: cloneSPresetData(getSPresetCurrentProvider()),
+    stream: Boolean(options.stream),
+    final: true,
+    channel: String(options.channel || 'main'),
+  });
+  return normalizeSPresetToolCallFormatterResult(result);
+}
+
+async function previewSPresetToolCallFormatter(script, toolCalls) {
+  try {
+    const settings = normalizeSPresetOutputPreprocessing({
+      toolCallFormatter: { enabled: true, script },
+    });
+    const calls = collectSPresetToolCallsForFormatting(toolCalls);
+    const output = await formatSPresetToolCalls(toolCalls, settings, { stream: false, channel: 'preview' });
+    return { valid: true, output, calls };
+  } catch (error) {
+    return {
+      valid: false,
+      output: '',
+      calls: [],
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 function appendSPresetToolArgumentText(source, toolText) {
   const current = source == null ? '' : String(source);
   const addition = toolText == null ? '' : String(toolText);
@@ -998,7 +1145,7 @@ function stripSPresetChoiceToolCalls(choice) {
  * malformed shape throws, allowing the fetch wrapper to return the untouched
  * original JSON and preserve normal SillyTavern tool execution.
  */
-function consumeSPresetToolCallsFromResponse(data) {
+async function consumeSPresetToolCallsFromResponse(data, settings) {
   if (!data || typeof data !== 'object') return null;
   const nextData = typeof structuredClone === 'function'
     ? structuredClone(data)
@@ -1012,7 +1159,7 @@ function consumeSPresetToolCallsFromResponse(data) {
     ? geminiParts.filter(part => part?.functionCall)
     : [];
   if (geminiCalls.length > 0) {
-    const toolText = formatSPresetToolCallArguments(geminiCalls);
+    const toolText = await formatSPresetToolCalls(geminiCalls, settings, { stream: false, channel: 'gemini' });
     nextData.responseContent.parts = [
       ...stripSPresetGeminiFunctionParts(geminiParts),
       { text: toolText },
@@ -1033,7 +1180,7 @@ function consumeSPresetToolCallsFromResponse(data) {
   if (Array.isArray(nextData.content)) {
     const claudeCalls = nextData.content.filter(block => block?.type === 'tool_use');
     if (claudeCalls.length > 0) {
-      const toolText = formatSPresetToolCallArguments(claudeCalls);
+      const toolText = await formatSPresetToolCalls(claudeCalls, settings, { stream: false, channel: 'claude' });
       nextData.content = [
         ...nextData.content.filter(block => block?.type !== 'tool_use'),
         { type: 'text', text: toolText },
@@ -1056,7 +1203,7 @@ function consumeSPresetToolCallsFromResponse(data) {
       if (message.function_call && typeof message.function_call === 'object') calls.push(message.function_call);
       if (calls.length === 0) continue;
 
-      const toolText = formatSPresetToolCallArguments(calls);
+      const toolText = await formatSPresetToolCalls(calls, settings, { stream: false, channel: `choice:${choice?.index ?? 0}` });
       message.content = appendSPresetResponseText(message.content, toolText);
       stripSPresetChoiceToolCalls(choice);
       consumed = true;
@@ -1072,7 +1219,7 @@ function consumeSPresetToolCallsFromResponse(data) {
       if (!Array.isArray(parts)) continue;
       const calls = parts.filter(part => part?.functionCall);
       if (calls.length === 0) continue;
-      const toolText = formatSPresetToolCallArguments(calls);
+      const toolText = await formatSPresetToolCalls(calls, settings, { stream: false, channel: 'gemini-candidate' });
       candidate.content.parts = [
         ...stripSPresetGeminiFunctionParts(parts),
         { text: toolText },
@@ -1086,7 +1233,7 @@ function consumeSPresetToolCallsFromResponse(data) {
   // it is safe to support because ToolManager recognizes this exact field.
   const directCalls = nextData?.message?.tool_calls;
   if (directCalls && typeof directCalls === 'object') {
-    const toolText = formatSPresetToolCallArguments(directCalls);
+    const toolText = await formatSPresetToolCalls(directCalls, settings, { stream: false, channel: 'cohere' });
     const currentContent = nextData.message.content;
     if (Array.isArray(currentContent)) {
       const textBlock = currentContent.find(block => block && typeof block.text === 'string');
@@ -1156,7 +1303,7 @@ function wrapSPresetOutputGenerator(originalGenerator, settings) {
         toolConsumptionFailed = true;
       } else {
         try {
-          const toolText = formatSPresetToolCallArguments(lastToolCalls);
+          const toolText = await formatSPresetToolCalls(lastToolCalls, settings, { stream: true, channel: 'main' });
           // Feed argument text into the same session before EOF. Stateful scripts
           // (notably a Unicode decoder holding a trailing "\\u") therefore see
           // one continuous stream and retain their existing hold/state behavior.
@@ -1351,7 +1498,7 @@ function installSPresetOutputFetchHook() {
           if (!validation.valid) return data;
 
           try {
-            return consumeSPresetToolCallsFromResponse(data) || data;
+            return await consumeSPresetToolCallsFromResponse(data, settings) || data;
           } catch (error) {
             // The parsed data object has never been modified; transformation
             // happens on a clone, so returning it restores normal ST behavior.
@@ -2277,6 +2424,12 @@ $(async () => {
     },
     async previewOutputPreprocessing(script, chunks) {
       return cloneSPresetData(await previewSPresetOutputPreprocessing(script, chunks));
+    },
+    validateToolCallFormatter(script) {
+      return validateSPresetToolCallFormatter(script);
+    },
+    async previewToolCallFormatter(script, toolCalls) {
+      return cloneSPresetData(await previewSPresetToolCallFormatter(script, toolCalls));
     },
     commitBindings(data = {}) {
       // On 1.13.5+, the native preset regex array is authoritative and may have
