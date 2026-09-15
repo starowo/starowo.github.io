@@ -36,6 +36,7 @@ let SPresetSettings = {
     },
   },
   FixedPresetName: '',
+  ForcedPostProcessing: { enabled: false, mode: '' },
 };
 
 window.SPresetTempData = {};
@@ -281,7 +282,105 @@ function normalizeSPresetSettings(value) {
     MessageInjections: isSPresetPlainObject(source.MessageInjections) ? cloneSPresetData(source.MessageInjections) : {},
     OutputPreprocessing: normalizeSPresetOutputPreprocessing(source.OutputPreprocessing),
     FixedPresetName: normalizeSPresetFixedPresetName(source.FixedPresetName),
+    ForcedPostProcessing: normalizeSPresetForcedPostProcessing(source.ForcedPostProcessing),
   };
+}
+
+function normalizeSPresetForcedPostProcessing(value) {
+  const modes = ['', 'merge', 'merge_tools', 'semi', 'semi_tools', 'strict', 'strict_tools', 'single'];
+  const mode = value?.mode === 'claude' ? 'merge' : String(value?.mode ?? '');
+  return { enabled: Boolean(value?.enabled) && modes.includes(mode), mode: modes.includes(mode) ? mode : '' };
+}
+
+let spresetEntryDecisions = null;
+
+function applySPresetEntryDecisions(order) {
+  if (!spresetEntryDecisions) return order;
+  return order.map(entry => spresetEntryDecisions.has(entry.identifier)
+    ? { ...entry, enabled: spresetEntryDecisions.get(entry.identifier) }
+    : entry);
+}
+
+async function evaluateSPresetEntryConditions(type) {
+  spresetEntryDecisions = null;
+  const decisions = new Map();
+  const context = SillyTavern.getContext();
+  const provider = getSPresetCurrentProvider();
+  for (const entry of context.chatCompletionSettings?.prompts || []) {
+    if (!entry.spreset_condition_enabled) continue;
+    try {
+      const test = compileSPresetFunctionExpression(entry.spreset_condition_script, '条目条件');
+      const result = await test({ model: provider.model, provider: cloneSPresetData(provider),
+        source: provider.source, type: String(type || 'normal'),
+        entry: cloneSPresetData(entry), chat: cloneSPresetData(context.chat || []) });
+      if (typeof result !== 'boolean') throw new TypeError('条目条件必须返回 true 或 false');
+      decisions.set(entry.identifier, result);
+    } catch (error) {
+      decisions.set(entry.identifier, false);
+      console.error(`[SPreset Entry Condition] ${entry.name || entry.identifier}`, error);
+      globalThis.toastr?.warning?.(`条目“${entry.name || entry.identifier}”条件执行失败，本次不启用`, 'SPreset');
+    }
+  }
+  spresetEntryDecisions = decisions;
+}
+
+function enforceSPresetPostProcessing(data) {
+  const settings = normalizeSPresetForcedPostProcessing(SPresetSettings.ForcedPostProcessing);
+  if (!settings.enabled) return;
+  ctx.chatCompletionSettings.custom_prompt_post_processing = settings.mode;
+  if (data && typeof data === 'object') data.custom_prompt_post_processing = settings.mode;
+  const select = document.getElementById('custom_prompt_post_processing');
+  if (select) select.value = settings.mode;
+}
+
+function installSPresetEntryHooks() {
+  const manager = SPresetImports?.promptManager;
+  if (!manager || manager.__spresetEntryHooks) return;
+  const getOrder = manager.getPromptOrderForCharacter;
+  if (typeof getOrder !== 'function') return;
+  let generationReadDepth = 0;
+  manager.getPromptOrderForCharacter = function (...args) {
+    const order = getOrder.apply(this, args);
+    return generationReadDepth ? applySPresetEntryDecisions(order) : order;
+  };
+  for (const method of ['getPromptCollection', 'isPromptDisabledForActiveCharacter']) {
+    const original = manager[method];
+    if (typeof original !== 'function') continue;
+    manager[method] = function (...args) {
+      generationReadDepth++;
+      try { return original.apply(this, args); }
+      finally { generationReadDepth--; }
+    };
+  }
+  manager.__spresetEntryHooks = true;
+  ctx.eventSource.makeFirst(ctx.eventTypes.GENERATION_STARTED, async type => {
+    enforceSPresetPostProcessing();
+    await evaluateSPresetEntryConditions(type);
+    syncSPresetToolRegistrations();
+  });
+  for (const event of [ctx.eventTypes.GENERATION_ENDED, ctx.eventTypes.GENERATION_STOPPED]) {
+    if (event) ctx.eventSource.on(event, () => { spresetEntryDecisions = null; });
+  }
+  ctx.eventSource.makeLast(ctx.eventTypes.CHAT_COMPLETION_SETTINGS_READY, enforceSPresetPostProcessing);
+  ctx.eventSource.makeLast(ctx.eventTypes.GENERATE_AFTER_DATA, enforceSPresetPostProcessing);
+
+  const style = document.createElement('style');
+  style.textContent = 'li[data-pm-identifier].spreset-native-hidden { display: none !important; }';
+  document.head.appendChild(style);
+  let frame = 0;
+  const updateHidden = () => {
+    frame = 0;
+    const hidden = new Set((ctx.chatCompletionSettings.prompts || [])
+      .filter(entry => entry.spreset_hidden).map(entry => entry.identifier));
+    document.querySelectorAll('li[data-pm-identifier]').forEach(row => {
+      row.classList.toggle('spreset-native-hidden', hidden.has(row.dataset.pmIdentifier));
+    });
+  };
+  new MutationObserver(() => {
+    if (!frame) frame = requestAnimationFrame(updateHidden);
+  }).observe(document.body, { childList: true, subtree: true });
+  ctx.eventSource.on(ctx.eventTypes.SETTINGS_UPDATED, updateHidden);
+  updateHidden();
 }
 
 function getSPresetFeatures() {
@@ -299,6 +398,7 @@ function getSPresetFeatures() {
     regexBinding,
     outputPreprocessing: normalizeSPresetOutputPreprocessing(SPresetSettings.OutputPreprocessing),
     fixedPresetName: normalizeSPresetFixedPresetName(SPresetSettings.FixedPresetName),
+    forcedPostProcessing: normalizeSPresetForcedPostProcessing(SPresetSettings.ForcedPostProcessing),
   };
 }
 
@@ -333,6 +433,7 @@ function normalizeSPresetFeatures(value, fallbackSettings = SPresetSettings) {
       mergeObjects(fallback.OutputPreprocessing, outputPreprocessing),
     ),
     fixedPresetName: normalizeSPresetFixedPresetName(fixedPresetName, fallback.FixedPresetName),
+    forcedPostProcessing: normalizeSPresetForcedPostProcessing(readFeature('forcedPostProcessing', 'ForcedPostProcessing')),
   };
 }
 
@@ -364,6 +465,11 @@ function validateSPresetFeatures(value, fallbackSettings = SPresetSettings) {
     const rawRegexBinding = rawFeature('regexBinding', 'RegexBinding');
     const rawOutputPreprocessing = rawFeature('outputPreprocessing', 'OutputPreprocessing');
     const rawFixedPresetName = rawFeature('fixedPresetName', 'FixedPresetName');
+    const rawForced = rawFeature('forcedPostProcessing', 'ForcedPostProcessing');
+    if (rawForced !== undefined && (!isSPresetPlainObject(rawForced)
+      || !['', 'claude', 'merge', 'merge_tools', 'semi', 'semi_tools', 'strict', 'strict_tools', 'single'].includes(String(rawForced.mode ?? '')))) {
+      errors.push('强制后处理配置或选项无效');
+    }
     if (rawChatSquash !== undefined && !isSPresetPlainObject(rawChatSquash)) {
       errors.push('聊天记录合并配置必须是对象');
     }
@@ -427,6 +533,7 @@ function validateSPresetFeatures(value, fallbackSettings = SPresetSettings) {
 }
 
 function applySPresetFeaturesToSettings(settings, features) {
+  settings.ForcedPostProcessing = normalizeSPresetForcedPostProcessing(features.forcedPostProcessing);
   settings.ChatSquash = cloneSPresetData(features.chatSquash);
   settings.MacroNest = normalizeSPresetMacroNest(features.macroNest);
   settings.RegexBinding = cloneSPresetData(features.regexBinding);
@@ -2301,6 +2408,7 @@ $(async () => {
         }
       };
       installSPresetMessageInjectionHook();
+      installSPresetEntryHooks();
     }
   });
 
@@ -5448,7 +5556,7 @@ function getActiveEntryIdentifiers() {
   const activeOrderEntry = promptOrder.find(po => po.character_id === 100001);
   if (!activeOrderEntry) return new Set();
   const enabled = new Set();
-  for (const item of activeOrderEntry.order) {
+  for (const item of applySPresetEntryDecisions(activeOrderEntry.order)) {
     if (item.enabled !== false) {
       enabled.add(item.identifier);
     }
