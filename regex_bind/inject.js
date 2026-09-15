@@ -3037,6 +3037,10 @@ const ChatSquash = () => {
       const toSquash = [];
       for (const item of chatData.messages.collection) {
         if (item instanceof SPresetImports.MessageCollection) {
+          if (toSquash.length > 0) {
+            chat.push(...squashPrompts(toSquash));
+            toSquash.length = 0;
+          }
           if (item.identifier === 'chatHistory') {
             chat.push(...squashPrompts(item.getChat()));
           } else {
@@ -3049,6 +3053,8 @@ const ChatSquash = () => {
             ...(item.name ? { name: item.name } : {}),
             ...(item.tool_calls ? { tool_calls: item.tool_calls } : {}),
             ...(item.role === 'tool' ? { tool_call_id: item.identifier } : {}),
+            ...(item.signature != null ? { signature: item.signature } : {}),
+            ...(item.reasoning != null ? { reasoning: item.reasoning } : {}),
           };
           if (item.identifier.startsWith('chatHistory')) {
             toSquash.push(message);
@@ -3063,6 +3069,7 @@ const ChatSquash = () => {
           console.warn(`Skipping invalid or empty message in collection: ${JSON.stringify(item)}`);
         }
       }
+      if (toSquash.length > 0) chat.push(...squashPrompts(toSquash));
       return chat;
     }
   };
@@ -3219,6 +3226,7 @@ const ChatSquash = () => {
     const segmentRoles = [];
 
     function pushMergedContent() {
+      if (lastRole) mergedContent += affix[lastRole].suffix;
       const processed = postProcess(mergedContent);
       if (settings.re_split && segmentRoles.length > 0) {
         const splitMsgs = reSplitContent(processed, affix);
@@ -3235,6 +3243,7 @@ const ChatSquash = () => {
         });
       }
       mergedContent = '';
+      lastRole = '';
       segmentRoles.length = 0;
     }
 
@@ -3289,14 +3298,60 @@ const ChatSquash = () => {
       return result;
     }
 
-    for (const prompt of newPrompts) {
+    for (const sourcePrompt of newPrompts) {
+      // Native payloads need their original role and metadata. In particular,
+      // never flatten images or move tool results into a user/system message.
+      const hasNativePayload = sourcePrompt && (
+        !Object.prototype.hasOwnProperty.call(affix, sourcePrompt.role)
+        || Object.keys(sourcePrompt).some(key => !['role', 'content'].includes(key)
+          && sourcePrompt[key] != null)
+        || (Array.isArray(sourcePrompt.content) && sourcePrompt.content.some(part => (
+          typeof part !== 'string' && (!part || part.type !== 'text'
+            || typeof part.text !== 'string'
+            || Object.keys(part).some(key => !['type', 'text'].includes(key)))
+        )))
+        || (sourcePrompt.content != null && typeof sourcePrompt.content === 'object'
+          && !Array.isArray(sourcePrompt.content))
+      );
+      if (hasNativePayload) {
+        if (mergedContent) pushMergedContent();
+        const cleanBoundaryText = text => {
+          if (settings.enable_squashed_separator && settings.squashed_separator_string) {
+            text = text.replace(settings.squashed_separator_regex
+              ? new RegExp(settings.squashed_separator_string)
+              : settings.squashed_separator_string, '');
+          }
+          if (settings.parse_clewd) text = text.replace('<|no-trans|>', '');
+          return text;
+        };
+        const content = sourcePrompt.content;
+        prompts.push({
+          ...sourcePrompt,
+          ...(typeof content === 'string' ? { content: cleanBoundaryText(content) }
+            : Array.isArray(content) ? { content: content.map(part => {
+              if (typeof part === 'string') return cleanBoundaryText(part);
+              if (part?.type === 'text' && typeof part.text === 'string'
+                && Object.keys(part).every(key => ['type', 'text'].includes(key))) {
+                return { ...part, text: cleanBoundaryText(part.text) };
+              }
+              return part;
+            }) } : {}),
+        });
+        if (settings.role === 'follow') squashRole = sourcePrompt.role;
+        lastRole = '';
+        continue;
+      }
+      if (!sourcePrompt) continue;
+      const prompt = { ...sourcePrompt };
       if (!prompt.content && !prompt.tool_calls) {
         continue;
       }
       if (Array.isArray(prompt.content)) {
         let textContent = '';
         for (const item of prompt.content) {
-          if (item.type === 'text') {
+          if (typeof item === 'string') {
+            textContent += item;
+          } else if (item.type === 'text') {
             textContent += item.text;
           } else {
             textContent += `<｜attachment｜${attachments.length}｜>`;
@@ -3355,9 +3410,6 @@ const ChatSquash = () => {
       lastRole = prompt.role;
     }
     if (mergedContent) {
-      if (lastRole) {
-        mergedContent += affix[lastRole].suffix;
-      }
       pushMergedContent();
     }
     return prompts;
@@ -3370,12 +3422,13 @@ const ChatSquash = () => {
     const contentParts = [];
     const matchPattern = /<｜attachment｜(\d+)｜>/g;
     let match;
+    let cursor = 0;
     while ((match = matchPattern.exec(content)) !== null) {
-      contentParts.push({ type: 'text', text: content.slice(0, match.index) });
+      contentParts.push({ type: 'text', text: content.slice(cursor, match.index) });
       contentParts.push(attachments[match[1]]);
-      content = content.slice(match.index + match[0].length);
+      cursor = match.index + match[0].length;
     }
-    contentParts.push({ type: 'text', text: content });
+    contentParts.push({ type: 'text', text: content.slice(cursor) });
     return contentParts;
   }
 
