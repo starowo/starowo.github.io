@@ -37,6 +37,7 @@ let SPresetSettings = {
   },
   FixedPresetName: '',
   ForcedPostProcessing: { enabled: false, mode: '' },
+  FinalRequestProcessing: { enabled: false, script: '' },
 };
 
 window.SPresetTempData = {};
@@ -283,6 +284,7 @@ function normalizeSPresetSettings(value) {
     OutputPreprocessing: normalizeSPresetOutputPreprocessing(source.OutputPreprocessing),
     FixedPresetName: normalizeSPresetFixedPresetName(source.FixedPresetName),
     ForcedPostProcessing: normalizeSPresetForcedPostProcessing(source.ForcedPostProcessing),
+    FinalRequestProcessing: normalizeSPresetFinalRequestProcessing(source.FinalRequestProcessing),
   };
 }
 
@@ -290,6 +292,10 @@ function normalizeSPresetForcedPostProcessing(value) {
   const modes = ['', 'merge', 'merge_tools', 'semi', 'semi_tools', 'strict', 'strict_tools', 'single'];
   const mode = value?.mode === 'claude' ? 'merge' : String(value?.mode ?? '');
   return { enabled: Boolean(value?.enabled) && modes.includes(mode), mode: modes.includes(mode) ? mode : '' };
+}
+
+function normalizeSPresetFinalRequestProcessing(value) {
+  return { enabled: Boolean(value?.enabled), script: value?.script == null ? '' : String(value.script) };
 }
 
 let spresetEntryDecisions = null;
@@ -399,6 +405,7 @@ function getSPresetFeatures() {
     outputPreprocessing: normalizeSPresetOutputPreprocessing(SPresetSettings.OutputPreprocessing),
     fixedPresetName: normalizeSPresetFixedPresetName(SPresetSettings.FixedPresetName),
     forcedPostProcessing: normalizeSPresetForcedPostProcessing(SPresetSettings.ForcedPostProcessing),
+    finalRequestProcessing: normalizeSPresetFinalRequestProcessing(SPresetSettings.FinalRequestProcessing),
   };
 }
 
@@ -434,6 +441,7 @@ function normalizeSPresetFeatures(value, fallbackSettings = SPresetSettings) {
     ),
     fixedPresetName: normalizeSPresetFixedPresetName(fixedPresetName, fallback.FixedPresetName),
     forcedPostProcessing: normalizeSPresetForcedPostProcessing(readFeature('forcedPostProcessing', 'ForcedPostProcessing')),
+    finalRequestProcessing: normalizeSPresetFinalRequestProcessing(readFeature('finalRequestProcessing', 'FinalRequestProcessing')),
   };
 }
 
@@ -466,6 +474,10 @@ function validateSPresetFeatures(value, fallbackSettings = SPresetSettings) {
     const rawOutputPreprocessing = rawFeature('outputPreprocessing', 'OutputPreprocessing');
     const rawFixedPresetName = rawFeature('fixedPresetName', 'FixedPresetName');
     const rawForced = rawFeature('forcedPostProcessing', 'ForcedPostProcessing');
+    const rawFinalRequest = rawFeature('finalRequestProcessing', 'FinalRequestProcessing');
+    if (rawFinalRequest !== undefined && !isSPresetPlainObject(rawFinalRequest)) {
+      errors.push('最终请求处理配置必须是对象');
+    }
     if (rawForced !== undefined && (!isSPresetPlainObject(rawForced)
       || !['', 'claude', 'merge', 'merge_tools', 'semi', 'semi_tools', 'strict', 'strict_tools', 'single'].includes(String(rawForced.mode ?? '')))) {
       errors.push('强制后处理配置或选项无效');
@@ -524,6 +536,10 @@ function validateSPresetFeatures(value, fallbackSettings = SPresetSettings) {
     const validation = validateSPresetOutputPreprocessing(features.outputPreprocessing.script);
     if (!validation.valid) errors.push(`输出预处理：${validation.error}`);
   }
+  if (features.finalRequestProcessing.enabled) {
+    const validation = validateSPresetFinalRequestProcessing(features.finalRequestProcessing.script);
+    if (!validation.valid) errors.push(`最终请求处理：${validation.error}`);
+  }
   if (features.outputPreprocessing.consumeToolCalls && features.outputPreprocessing.toolCallFormatter.enabled) {
     const validation = validateSPresetToolCallFormatter(features.outputPreprocessing.toolCallFormatter.script);
     if (!validation.valid) errors.push(`工具调用格式化：${validation.error}`);
@@ -534,6 +550,7 @@ function validateSPresetFeatures(value, fallbackSettings = SPresetSettings) {
 
 function applySPresetFeaturesToSettings(settings, features) {
   settings.ForcedPostProcessing = normalizeSPresetForcedPostProcessing(features.forcedPostProcessing);
+  settings.FinalRequestProcessing = normalizeSPresetFinalRequestProcessing(features.finalRequestProcessing);
   settings.ChatSquash = cloneSPresetData(features.chatSquash);
   settings.MacroNest = normalizeSPresetMacroNest(features.macroNest);
   settings.RegexBinding = cloneSPresetData(features.regexBinding);
@@ -1565,6 +1582,65 @@ async function isSPresetStreamingFetchRequest(input, init) {
   }
 }
 
+function validateSPresetFinalRequestProcessing(script) {
+  try {
+    compileSPresetFunctionExpression(script, '最终请求处理');
+    return { valid: true, error: '' };
+  } catch (error) {
+    return { valid: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function processSPresetFinalRequest(script, request, options = {}) {
+  if (!isSPresetPlainObject(request)) throw new TypeError('请求体必须是 JSON 对象');
+  const draft = cloneSPresetData(request);
+  const provider = options.provider || getSPresetCurrentProvider();
+  const processor = compileSPresetFunctionExpression(script, '最终请求处理');
+  const result = await processor({
+    request: draft,
+    provider: cloneSPresetData(provider),
+    model: String(request.model ?? provider.model ?? ''),
+    source: String(request.chat_completion_source ?? provider.source ?? ''),
+    stream: request.stream === true,
+    preview: Boolean(options.preview),
+  });
+  const processed = result === undefined ? draft : result;
+  if (!isSPresetPlainObject(processed)) throw new TypeError('脚本必须返回请求对象，或原地修改 request 并返回 undefined');
+  // The caller has already chosen its response parser. Switching these fields
+  // here would make ST parse the response using the wrong transport/provider.
+  if (processed.stream !== request.stream || processed.chat_completion_source !== request.chat_completion_source) {
+    throw new TypeError('最终请求处理不能改变 stream 或 chat_completion_source；酒馆已经按原值选择了响应解析方式');
+  }
+  const normalized = JSON.parse(JSON.stringify(processed));
+  if (!isSPresetPlainObject(normalized)) throw new TypeError('处理结果无法序列化为 JSON 请求对象');
+  if (normalized.stream !== request.stream || normalized.chat_completion_source !== request.chat_completion_source) {
+    throw new TypeError('序列化后请求的 stream 或 chat_completion_source 发生变化');
+  }
+  return normalized;
+}
+
+async function previewSPresetFinalRequestProcessing(script, request) {
+  try {
+    return { valid: true, request: await processSPresetFinalRequest(script, request, { preview: true }) };
+  } catch (error) {
+    return { valid: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function prepareSPresetFinalFetchArguments(input, init) {
+  let body = init?.body;
+  if (typeof body !== 'string' && input && typeof input.clone === 'function') {
+    body = await input.clone().text();
+  }
+  if (typeof body !== 'string') throw new TypeError('最终请求处理仅支持 JSON 请求体');
+  const settings = normalizeSPresetFinalRequestProcessing(SPresetSettings.FinalRequestProcessing);
+  const request = await processSPresetFinalRequest(settings.script, JSON.parse(body));
+  const headers = new Headers(init?.headers ?? input?.headers);
+  headers.delete('content-length');
+  if (!headers.has('content-type')) headers.set('content-type', 'application/json');
+  return [input, { ...init, headers, body: JSON.stringify(request) }];
+}
+
 let spresetOutputFetchHookInstalled = false;
 function installSPresetOutputFetchHook() {
   if (spresetOutputFetchHookInstalled || typeof globalThis.fetch !== 'function') return;
@@ -1572,8 +1648,19 @@ function installSPresetOutputFetchHook() {
   const originalFetch = globalThis.fetch;
 
   globalThis.fetch = async function (...args) {
-    const [input, init] = args;
+    let [input, init] = args;
     const isTargetRequest = isSPresetChatCompletionGenerateRequest(input, init);
+    if (isTargetRequest && SPresetSettings.FinalRequestProcessing?.enabled) {
+      try {
+        args = await prepareSPresetFinalFetchArguments(input, init);
+        [input, init] = args;
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        console.error('[SPreset Final Request] 最终请求处理失败，已中止发送：', error);
+        globalThis.toastr?.error?.(detail, 'SPreset 最终请求处理失败');
+        throw new Error(`SPreset 最终请求处理失败：${detail}`);
+      }
+    }
     // Start the network request immediately. Reading a cloned Request body in
     // parallel covers callers that pass `new Request(...)` without delaying it.
     const streamingRequest = isTargetRequest
@@ -2518,6 +2605,10 @@ $(async () => {
   // refresh registrations once. This avoids partial saves and repeated
   // execution of tool-definition code when the Editor saves a workspace.
   window.SPresetEditorBridge = {
+    validateFinalRequestProcessing: validateSPresetFinalRequestProcessing,
+    async previewFinalRequestProcessing(script, request) {
+      return cloneSPresetData(await previewSPresetFinalRequestProcessing(script, request));
+    },
     getPresetFeatures() {
       return cloneSPresetData(getSPresetFeatures());
     },
