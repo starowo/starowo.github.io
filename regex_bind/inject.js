@@ -1680,10 +1680,44 @@ const SPRESET_LOG_MAX_TOTAL = 10 * 1024 * 1024;
 let spresetGenerationLogs = [];
 let spresetLogDatabasePromise = null;
 let spresetLogLoadPromise = null;
+let spresetExtensionLogModulePromise = null;
 let spresetScriptTrace = null;
 let spresetScriptExecutionSequence = 0;
 const SPRESET_SCRIPT_LOG_MAX_EVENTS = 500;
 const SPRESET_SCRIPT_LOG_MAX_CHARS = 512 * 1024;
+
+function loadSPresetExtensionLogModule() {
+  if (globalThis.SPresetExtensionLogImports) return Promise.resolve(globalThis.SPresetExtensionLogImports);
+  if (!spresetExtensionLogModulePromise) {
+    const url = new URL('./scripts/extensions.js', globalThis.location.href).href;
+    // Namespace import tolerates older versions missing individual exports.
+    // Failure is isolated from SPreset's required runtime imports.
+    spresetExtensionLogModulePromise = import(url).then(module => {
+      globalThis.SPresetExtensionLogImports = module;
+      return module;
+    }).catch(() => null);
+  }
+  return spresetExtensionLogModulePromise;
+}
+
+function getSPresetExtensionLogSnapshot() {
+  const module = globalThis.SPresetExtensionLogImports;
+  const disabled = new Set(Array.isArray(ctx.extensionSettings?.disabledExtensions)
+    ? ctx.extensionSettings.disabledExtensions : []);
+  const installed = new Set(Array.isArray(module?.extensionNames) ? module.extensionNames : []);
+  const names = new Set([...installed, ...disabled]);
+  const entries = [...names].filter(name => typeof name === 'string').sort().map(id => {
+    let manifest = null, enabled = !disabled.has(id);
+    try { manifest = module?.getExtensionManifest?.(id) || null; } catch { /* Manifest unavailable. */ }
+    try { enabled = module?.findExtension?.(id)?.enabled ?? enabled; } catch { /* Use configured disabled list. */ }
+    return { id, displayName: String(manifest?.display_name || id).slice(0, 300),
+      version: manifest?.version == null ? null : String(manifest.version).slice(0, 100),
+      enabled: Boolean(enabled), installed: installed.has(id),
+      type: String(module?.extensionTypes?.[id] || (id.startsWith('third-party/') ? 'third-party' : 'unknown')) };
+  });
+  return { capturedAt: new Date().toISOString(), available: Array.isArray(module?.extensionNames),
+    source: 'SillyTavern frontend registry', statusSource: 'configuration', entries };
+}
 
 function beginSPresetScriptGeneration(type = 'normal') {
   if (spresetScriptTrace) finishSPresetScriptGeneration();
@@ -1697,7 +1731,7 @@ function ensureSPresetScriptTrace(type = 'script') {
   const presetName = String(ctx.chatCompletionSettings?.preset_settings_openai || '');
   if (!spresetScriptTrace || spresetScriptTrace.presetName !== presetName) {
     spresetScriptTrace = { id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      presetName, type: String(type), startedAt: new Date().toISOString(), logs: [], chars: 0, dropped: 0, records: new Set(), timer: null };
+      presetName, type: String(type), startedAt: new Date().toISOString(), logs: [], stages: Object.create(null), chars: 0, dropped: 0, records: new Set(), timer: null };
   }
   return spresetScriptTrace;
 }
@@ -1707,6 +1741,7 @@ function attachSPresetScriptTrace(record, trace) {
   record.generationId = trace.id;
   record.generationType = trace.type;
   record.scriptLogs = trace.logs;
+  record.scriptLogStages = trace.stages;
   record.scriptLogsDropped = trace.dropped;
   trace.records.add(record);
 }
@@ -1716,7 +1751,7 @@ function ensureSPresetScriptPlaceholder(trace) {
   if (existing) return existing;
   const record = { id: trace.id, startedAt: trace.startedAt, endedAt: null, status: 'preparing',
     presetName: trace.presetName, endpoint: null, request: null, response: null,
-    apiConfig: capSPresetLogValue({ provider: getSPresetCurrentProvider() }) };
+    apiConfig: capSPresetLogValue({ provider: getSPresetCurrentProvider() }), extensions: getSPresetExtensionLogSnapshot() };
   attachSPresetScriptTrace(record, trace);
   spresetGenerationLogs.push(record);
   trimSPresetGenerationLogs();
@@ -1783,6 +1818,50 @@ function persistSPresetScriptTrace(trace, immediate = false) {
   else if (!trace.timer) trace.timer = setTimeout(persist, 250);
 }
 
+function getSPresetScriptStageKey(event) {
+  return JSON.stringify([event.stage, event.identifier || '', event.channel || '']);
+}
+
+function chooseSPresetScriptLogEviction(trace, incoming) {
+  const buckets = new Map();
+  const groups = new Map();
+  const incomingBucket = getSPresetScriptStageKey(incoming);
+  for (let index = 0; index < trace.logs.length; index++) {
+    const event = trace.logs[index];
+    const bucketKey = getSPresetScriptStageKey(event);
+    const groupKey = event.executionId ? `${bucketKey}:${event.executionId}` : `${bucketKey}:console-${index}`;
+    if (!buckets.has(bucketKey)) buckets.set(bucketKey, []);
+    if (!groups.has(groupKey)) {
+      const group = { key: groupKey, bucket: bucketKey, executionId: event.executionId, indices: [], critical: false };
+      groups.set(groupKey, group);
+      buckets.get(bucketKey).push(group);
+    }
+    const group = groups.get(groupKey);
+    group.indices.push(index);
+    if (event.level === 'warn' || event.level === 'error') group.critical = true;
+  }
+  const critical = incoming.level === 'warn' || incoming.level === 'error';
+  const candidates = [];
+  for (const [key, bucket] of buckets) {
+    const hasIncoming = incoming.executionId && bucket.some(group => group.executionId === incoming.executionId);
+    const count = bucket.length + (key === incomingBucket && !hasIncoming ? 1 : 0);
+    if (count <= 1) continue;
+    const eligible = bucket.filter(group => !group.critical
+      && !(key === incomingBucket && incoming.executionId && group.executionId === incoming.executionId));
+    // Prefer removing middle calls from a chatty stage. Retain its first call
+    // and current call where space permits, and leave quiet stages intact.
+    const middle = count > 2 ? eligible.filter(group => group !== bucket[0]) : eligible;
+    const selected = middle[0] || eligible[0];
+    if (selected) candidates.push({ group: selected, count });
+  }
+  candidates.sort((a, b) => b.count - a.count || a.group.indices[0] - b.group.indices[0]);
+  if (candidates.length) return candidates[0].group.indices;
+  if (!critical) return null;
+  // Errors take precedence even when every stage only has one call left.
+  const fallback = [...groups.values()].find(group => !group.critical) || groups.values().next().value;
+  return fallback?.indices || null;
+}
+
 function recordSPresetScriptDiagnostic(stage, level, args, options = {}) {
   if (!normalizeSPresetLogUpload(SPresetSettings.LogUpload).enabled || options.preview) return;
   try {
@@ -1799,13 +1878,24 @@ function recordSPresetScriptDiagnostic(stage, level, args, options = {}) {
       args: args.slice(0, 8).map(value => serializeSPresetScriptArgument(value, 0, new WeakSet(), budget)) });
     const serializedArgs = JSON.stringify(event.args);
     if (serializedArgs.length > 65536) event.args = [{ truncated: true, preview: serializedArgs.slice(0, 65536) }];
+    const bucketKey = getSPresetScriptStageKey(event);
+    const stageStats = trace.stages[bucketKey] ||= { stage: event.stage, identifier: event.identifier || '', channel: event.channel || '',
+      events: 0, calls: 0, errors: 0, warnings: 0, dropped: 0 };
+    stageStats.events++;
+    if (event.event === 'before') stageStats.calls++;
+    if (level === 'error') stageStats.errors++;
+    if (level === 'warn') stageStats.warnings++;
     const chars = JSON.stringify(event).length;
     while (trace.logs.length && (trace.logs.length >= SPRESET_SCRIPT_LOG_MAX_EVENTS || trace.chars + chars > SPRESET_SCRIPT_LOG_MAX_CHARS)) {
-      const index = trace.logs.findIndex(item => item.level !== 'error' && item.level !== 'warn');
-      if (index < 0 && level !== 'error' && level !== 'warn') { trace.dropped++; persistSPresetScriptTrace(trace); return; }
-      const [removed] = trace.logs.splice(index < 0 ? 0 : index, 1);
-      trace.chars -= JSON.stringify(removed).length;
-      trace.dropped++;
+      const indices = chooseSPresetScriptLogEviction(trace, event);
+      if (!indices) { trace.dropped++; stageStats.dropped++; persistSPresetScriptTrace(trace); return; }
+      for (const index of [...indices].reverse()) {
+        const [removed] = trace.logs.splice(index, 1);
+        trace.chars -= JSON.stringify(removed).length;
+        trace.dropped++;
+        const previousStage = trace.stages[getSPresetScriptStageKey(removed)];
+        if (previousStage) previousStage.dropped++;
+      }
     }
     trace.logs.push(event); trace.chars += chars;
     persistSPresetScriptTrace(trace, level === 'error');
@@ -1968,14 +2058,17 @@ function isSPresetGenerationLogRequest(input, init) {
 }
 
 async function beginSPresetGenerationLog(input, init) {
+  const settings = { preset_settings_openai: ctx.chatCompletionSettings?.preset_settings_openai,
+    function_calling: ctx.chatCompletionSettings?.function_calling };
+  const provider = getSPresetCurrentProvider();
+  const trace = ensureSPresetScriptTrace('normal');
   let body = init?.body;
   if (typeof body !== 'string' && typeof input?.clone === 'function') body = await input.clone().text();
   let request;
   try { request = JSON.parse(body); } catch { request = body == null ? null : String(body); }
-  const settings = ctx.chatCompletionSettings || {};
+  await loadSPresetExtensionLogModule();
   const configuration = request && typeof request === 'object'
     ? Object.fromEntries(Object.entries(request).filter(([key]) => !['messages', 'prompt', 'tools'].includes(key))) : {};
-  const trace = ensureSPresetScriptTrace('normal');
   const placeholder = trace && [...trace.records].find(record => record.status === 'preparing');
   const record = Object.assign(placeholder || {}, {
     id: placeholder?.id || globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -1983,10 +2076,11 @@ async function beginSPresetGenerationLog(input, init) {
     presetName: String(settings.preset_settings_openai || ''),
     endpoint: redactSPresetLogValue(typeof input === 'string' || input instanceof URL ? String(input) : input.url),
     request: capSPresetLogValue(request),
-    apiConfig: capSPresetLogValue({ ...configuration, provider: getSPresetCurrentProvider(),
+    apiConfig: capSPresetLogValue({ ...configuration, provider,
       mainApi: ctx.mainApi || ctx.main_api || '', presetName: settings.preset_settings_openai || '',
       function_calling: settings.function_calling }),
     response: null,
+    extensions: getSPresetExtensionLogSnapshot(),
   });
   attachSPresetScriptTrace(record, trace);
   if (!placeholder) spresetGenerationLogs.push(record);
@@ -2052,6 +2146,7 @@ function installSPresetLogFetchHook() {
   if (spresetLogFetchHookInstalled) return;
   spresetLogFetchHookInstalled = true;
   void loadSPresetGenerationLogs();
+  void loadSPresetExtensionLogModule();
   if (ctx.eventSource?.makeFirst) {
     ctx.eventSource.makeFirst(ctx.eventTypes.GENERATION_STARTED, type => { ensureSPresetScriptTrace(type); });
     for (const event of [ctx.eventTypes.GENERATION_ENDED, ctx.eventTypes.GENERATION_STOPPED]) {
