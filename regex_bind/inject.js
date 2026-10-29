@@ -321,7 +321,7 @@ async function evaluateSPresetEntryConditions(type) {
   for (const entry of context.chatCompletionSettings?.prompts || []) {
     if (!entry.spreset_condition_enabled) continue;
     try {
-      const test = compileSPresetFunctionExpression(entry.spreset_condition_script, '条目条件');
+      const test = compileSPresetFunctionExpression(entry.spreset_condition_script, '条目条件', { diagnostics: true, identifier: entry.identifier });
       const result = await test({ model: provider.model, provider: cloneSPresetData(provider),
         source: provider.source, type: String(type || 'normal'),
         entry: cloneSPresetData(entry), chat: cloneSPresetData(context.chat || []) });
@@ -329,6 +329,7 @@ async function evaluateSPresetEntryConditions(type) {
       decisions.set(entry.identifier, result);
     } catch (error) {
       decisions.set(entry.identifier, false);
+      recordSPresetScriptDiagnostic('条目条件', 'error', [error], { identifier: entry.identifier });
       console.error(`[SPreset Entry Condition] ${entry.name || entry.identifier}`, error);
       globalThis.toastr?.warning?.(`条目“${entry.name || entry.identifier}”条件执行失败，本次不启用`, 'SPreset');
     }
@@ -366,6 +367,7 @@ function installSPresetEntryHooks() {
   }
   manager.__spresetEntryHooks = true;
   ctx.eventSource.makeFirst(ctx.eventTypes.GENERATION_STARTED, async type => {
+    beginSPresetScriptGeneration(type);
     enforceSPresetPostProcessing();
     await evaluateSPresetEntryConditions(type);
     syncSPresetToolRegistrations();
@@ -453,17 +455,23 @@ function normalizeSPresetFeatures(value, fallbackSettings = SPresetSettings) {
   };
 }
 
-function compileSPresetFunctionExpression(script, label) {
+function compileSPresetFunctionExpression(script, label, options = {}) {
   const source = String(script || '').trim().replace(/;+\s*$/, '');
   if (!source) throw new TypeError(`${label}脚本不能为空`);
   let processor;
   try {
-    processor = Function(`"use strict"; return (\n${source}\n);`)();
+    const scriptConsole = options.diagnostics ? createSPresetScriptConsole(label, options) : console;
+    processor = Function('console', `"use strict"; return (\n${source}\n);`)(scriptConsole);
   } catch (error) {
+    if (options.diagnostics) recordSPresetScriptDiagnostic(label, 'error', [error], options);
     throw new SyntaxError(`${label}脚本无法解析：${error instanceof Error ? error.message : String(error)}`);
   }
-  if (typeof processor !== 'function') throw new TypeError(`${label}脚本必须是函数表达式`);
-  return processor;
+  if (typeof processor !== 'function') {
+    const error = new TypeError(`${label}脚本必须是函数表达式`);
+    if (options.diagnostics) recordSPresetScriptDiagnostic(label, 'error', [error], options);
+    throw error;
+  }
+  return options.diagnostics ? wrapSPresetScriptFunction(processor, label, options) : processor;
 }
 
 function validateSPresetFeatures(value, fallbackSettings = SPresetSettings) {
@@ -807,7 +815,7 @@ function syncSPresetRegexesToCurrentST() {
 }
 
 
-function compileSPresetOutputPreprocessor(script) {
+function compileSPresetOutputPreprocessor(script, options = {}) {
   const source = String(script || '').trim().replace(/;\s*$/, '');
   if (!source) {
     throw new TypeError('输出预处理脚本不能为空');
@@ -815,8 +823,10 @@ function compileSPresetOutputPreprocessor(script) {
 
   let processor;
   try {
-    processor = Function(`"use strict"; return (\n${source}\n);`)();
+    const scriptConsole = options.diagnostics ? createSPresetScriptConsole('输出预处理', options) : console;
+    processor = Function('console', `"use strict"; return (\n${source}\n);`)(scriptConsole);
   } catch (error) {
+    if (options.diagnostics) recordSPresetScriptDiagnostic('输出预处理', 'error', [error], options);
     throw new SyntaxError(`输出预处理脚本无法解析：${error instanceof Error ? error.message : String(error)}`);
   }
   if (typeof processor !== 'function') {
@@ -864,7 +874,9 @@ function normalizeSPresetOutputProcessorResult(result) {
 }
 
 function createSPresetOutputPreprocessingSession(script, options = {}) {
-  let processor = compileSPresetOutputPreprocessor(script);
+  const diagnostics = { diagnostics: options.channel !== 'preview', channel: options.channel || 'main',
+    trace: options.channel !== 'preview' ? ensureSPresetScriptTrace() : null };
+  let processor = compileSPresetOutputPreprocessor(script, diagnostics);
   let raw = '';
   let output = '';
   let hold = '';
@@ -875,7 +887,7 @@ function createSPresetOutputPreprocessingSession(script, options = {}) {
 
   const snapshot = (emitted = '') => ({ raw, output, hold, emitted, failed });
   const reset = () => {
-    processor = compileSPresetOutputPreprocessor(script);
+    processor = compileSPresetOutputPreprocessor(script, diagnostics);
     raw = '';
     output = '';
     hold = '';
@@ -919,6 +931,7 @@ function createSPresetOutputPreprocessingSession(script, options = {}) {
       output += emitted;
       return snapshot(emitted);
     } catch (error) {
+      if (diagnostics.diagnostics) recordSPresetScriptDiagnostic('输出预处理', 'error', [error], diagnostics);
       failed = true;
       hold = '';
       output = raw;
@@ -1149,8 +1162,8 @@ function collectSPresetToolCallsForFormatting(value) {
   return calls;
 }
 
-function compileSPresetToolCallFormatter(script) {
-  return compileSPresetFunctionExpression(script, '工具调用格式化');
+function compileSPresetToolCallFormatter(script, options = {}) {
+  return compileSPresetFunctionExpression(script, '工具调用格式化', options);
 }
 
 function validateSPresetToolCallFormatter(script) {
@@ -1185,7 +1198,7 @@ async function formatSPresetToolCalls(toolCalls, settings, options = {}) {
 
   const calls = collectSPresetToolCallsForFormatting(toolCalls);
   if (calls.length === 0) throw new TypeError('没有找到可格式化的工具调用');
-  const processor = compileSPresetToolCallFormatter(formatter.script);
+  const processor = compileSPresetToolCallFormatter(formatter.script, { diagnostics: options.channel !== 'preview', channel: options.channel || 'main' });
   const result = await processor({
     calls: cloneSPresetData(calls),
     defaultText,
@@ -1450,6 +1463,7 @@ function wrapSPresetOutputGenerator(originalGenerator, settings) {
           toolConsumptionFailed = result.failed;
         } catch (error) {
           toolConsumptionFailed = true;
+          recordSPresetScriptDiagnostic('工具调用格式化/消费', 'error', [error]);
           console.error('[SPreset Output Preprocessing] 工具调用参数消费失败，已恢复酒馆原工具调用：', error);
         }
       }
@@ -1494,6 +1508,7 @@ function hookSPresetStreamingOutputPreprocessing() {
   if (!settings.enabled) return;
   const validation = validateSPresetOutputPreprocessing(settings.script);
   if (!validation.valid) {
+    recordSPresetScriptDiagnostic('输出预处理', 'warn', [validation.error]);
     console.warn('[SPreset Output Preprocessing] 已跳过无效脚本：', validation.error);
     return;
   }
@@ -1519,6 +1534,7 @@ const spresetOutputProcessedMessages = new WeakMap();
 
 function beginSPresetOutputGeneration(type, _options, dryRun) {
   if (dryRun) return;
+  ensureSPresetScriptTrace(type);
   const currentContext = SillyTavern.getContext();
   const lastMessage = currentContext.chat?.[currentContext.chat.length - 1];
   const shouldPreservePrefix = ['continue', 'append', 'appendFinal'].includes(String(type));
@@ -1545,6 +1561,7 @@ async function preprocessSPresetNonStreamingMessage(messageId, type) {
 
   const validation = validateSPresetOutputPreprocessing(settings.script);
   if (!validation.valid) {
+    recordSPresetScriptDiagnostic('输出预处理', 'warn', [validation.error]);
     console.warn('[SPreset Output Preprocessing] 已跳过无效脚本：', validation.error);
     return;
   }
@@ -1610,7 +1627,7 @@ async function processSPresetFinalRequest(script, request, options = {}) {
   if (!isSPresetPlainObject(request)) throw new TypeError('请求体必须是 JSON 对象');
   const draft = cloneSPresetData(request);
   const provider = options.provider || getSPresetCurrentProvider();
-  const processor = compileSPresetFunctionExpression(script, '最终请求处理');
+  const processor = compileSPresetFunctionExpression(script, '最终请求处理', { diagnostics: !options.preview });
   const result = await processor({
     request: draft,
     provider: cloneSPresetData(provider),
@@ -1663,6 +1680,153 @@ const SPRESET_LOG_MAX_TOTAL = 10 * 1024 * 1024;
 let spresetGenerationLogs = [];
 let spresetLogDatabasePromise = null;
 let spresetLogLoadPromise = null;
+let spresetScriptTrace = null;
+const SPRESET_SCRIPT_LOG_MAX_EVENTS = 500;
+const SPRESET_SCRIPT_LOG_MAX_CHARS = 512 * 1024;
+
+function beginSPresetScriptGeneration(type = 'normal') {
+  if (spresetScriptTrace) finishSPresetScriptGeneration();
+  spresetScriptTrace = null;
+  if (!normalizeSPresetLogUpload(SPresetSettings.LogUpload).enabled) return null;
+  return ensureSPresetScriptTrace(type);
+}
+
+function ensureSPresetScriptTrace(type = 'script') {
+  if (!normalizeSPresetLogUpload(SPresetSettings.LogUpload).enabled) return null;
+  const presetName = String(ctx.chatCompletionSettings?.preset_settings_openai || '');
+  if (!spresetScriptTrace || spresetScriptTrace.presetName !== presetName) {
+    spresetScriptTrace = { id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      presetName, type: String(type), startedAt: new Date().toISOString(), logs: [], chars: 0, dropped: 0, records: new Set(), timer: null };
+  }
+  return spresetScriptTrace;
+}
+
+function attachSPresetScriptTrace(record, trace) {
+  if (!trace) return;
+  record.generationId = trace.id;
+  record.generationType = trace.type;
+  record.scriptLogs = trace.logs;
+  record.scriptLogsDropped = trace.dropped;
+  trace.records.add(record);
+}
+
+function ensureSPresetScriptPlaceholder(trace) {
+  const existing = [...trace.records].find(record => record.status === 'preparing');
+  if (existing) return existing;
+  const record = { id: trace.id, startedAt: trace.startedAt, endedAt: null, status: 'preparing',
+    presetName: trace.presetName, endpoint: null, request: null, response: null,
+    apiConfig: capSPresetLogValue({ provider: getSPresetCurrentProvider() }) };
+  attachSPresetScriptTrace(record, trace);
+  spresetGenerationLogs.push(record);
+  trimSPresetGenerationLogs();
+  return record;
+}
+
+function serializeSPresetScriptArgument(value, depth = 0, seen = new WeakSet(), budget = { nodes: 0 }) {
+  if (++budget.nodes > 500) return '[TRUNCATED]';
+  if (depth > 6) return '[MAX_DEPTH]';
+  if (typeof value === 'string') return value.length > 8192 ? value.slice(0, 8192) + '[TRUNCATED]' : value;
+  if (typeof value === 'bigint' || typeof value === 'symbol' || typeof value === 'function') return String(value);
+  if (value === undefined) return '[undefined]';
+  if (!value || typeof value !== 'object') return value;
+  if (seen.has(value)) return '[Circular]';
+  seen.add(value);
+  let result;
+  try {
+    if (value instanceof Error || (typeof value.message === 'string' && typeof value.stack === 'string')) {
+      result = { name: value.name, message: serializeSPresetScriptArgument(value.message, depth + 1, seen, budget), stack: String(value.stack || '').slice(0, 16384),
+        ...(value.cause !== undefined ? { cause: serializeSPresetScriptArgument(value.cause, depth + 1, seen, budget) } : {}) };
+    } else if (Array.isArray(value)) {
+      result = value.slice(0, 50).map(item => serializeSPresetScriptArgument(item, depth + 1, seen, budget));
+    } else {
+      result = Object.fromEntries(Object.keys(value).slice(0, 50).map(key => {
+        try { return [key, serializeSPresetScriptArgument(value[key], depth + 1, seen, budget)]; }
+        catch { return [key, '[UNREADABLE]']; }
+      }));
+    }
+  } catch { result = '[UNSERIALIZABLE]'; }
+  seen.delete(value);
+  return result;
+}
+
+function persistSPresetScriptTrace(trace, immediate = false) {
+  const persist = () => {
+    trace.timer = null;
+    for (const record of trace.records) {
+      record.scriptLogsDropped = trace.dropped;
+      persistSPresetGenerationLog(record);
+    }
+    trimSPresetGenerationLogs();
+  };
+  if (immediate) { clearTimeout(trace.timer); persist(); }
+  else if (!trace.timer) trace.timer = setTimeout(persist, 250);
+}
+
+function recordSPresetScriptDiagnostic(stage, level, args, options = {}) {
+  if (!normalizeSPresetLogUpload(SPresetSettings.LogUpload).enabled || options.preview) return;
+  try {
+    const trace = options.trace || ensureSPresetScriptTrace();
+    if (!trace) return;
+    if (!trace.records.size) ensureSPresetScriptPlaceholder(trace);
+    const budget = { nodes: 0 };
+    const event = redactSPresetLogValue({ timestamp: new Date().toISOString(), stage, level,
+      ...(options.identifier ? { identifier: options.identifier } : {}),
+      ...(options.channel ? { channel: options.channel } : {}),
+      args: args.slice(0, 8).map(value => serializeSPresetScriptArgument(value, 0, new WeakSet(), budget)) });
+    const serializedArgs = JSON.stringify(event.args);
+    if (serializedArgs.length > 65536) event.args = [{ truncated: true, preview: serializedArgs.slice(0, 65536) }];
+    const chars = JSON.stringify(event).length;
+    while (trace.logs.length && (trace.logs.length >= SPRESET_SCRIPT_LOG_MAX_EVENTS || trace.chars + chars > SPRESET_SCRIPT_LOG_MAX_CHARS)) {
+      const index = trace.logs.findIndex(item => item.level !== 'error' && item.level !== 'warn');
+      if (index < 0 && level !== 'error' && level !== 'warn') { trace.dropped++; persistSPresetScriptTrace(trace); return; }
+      const [removed] = trace.logs.splice(index < 0 ? 0 : index, 1);
+      trace.chars -= JSON.stringify(removed).length;
+      trace.dropped++;
+    }
+    trace.logs.push(event); trace.chars += chars;
+    persistSPresetScriptTrace(trace, level === 'error');
+  } catch { /* Diagnostic recording must not change script behavior. */ }
+}
+
+function createSPresetScriptConsole(stage, options = {}) {
+  const trace = options.dynamic ? null : options.trace || ensureSPresetScriptTrace();
+  const captured = new Set(['log', 'info', 'warn', 'error', 'debug', 'table', 'trace', 'assert']);
+  return new Proxy(console, { get(target, key) {
+    const method = Reflect.get(target, key);
+    if (typeof method !== 'function') return method;
+    if (!captured.has(key)) return method.bind(target);
+    return (...args) => {
+      const values = key === 'trace' ? [...args.slice(0, 7), new Error('console.trace')]
+        : key === 'assert' ? [...args.slice(1, 7), new Error('Assertion failed')] : args;
+      if (key !== 'assert' || !args[0]) recordSPresetScriptDiagnostic(stage,
+        key === 'assert' ? 'error' : key === 'table' || key === 'trace' ? 'log' : key,
+        values, { ...options, trace: trace || undefined });
+      return Reflect.apply(method, target, args);
+    };
+  } });
+}
+
+function wrapSPresetScriptFunction(processor, stage, options = {}) {
+  const trace = options.dynamic ? null : options.trace || ensureSPresetScriptTrace();
+  return function (...args) {
+    const invocation = { ...options, trace: trace || ensureSPresetScriptTrace() };
+    const fail = error => { recordSPresetScriptDiagnostic(stage, 'error', [error], invocation); throw error; };
+    try {
+      const result = processor.apply(this, args);
+      return result && typeof result.then === 'function' ? Promise.resolve(result).catch(fail) : result;
+    } catch (error) { return fail(error); }
+  };
+}
+
+function finishSPresetScriptGeneration() {
+  const trace = spresetScriptTrace;
+  if (!trace) return;
+  for (const record of trace.records) {
+    if (record.status === 'preparing') finishSPresetGenerationLog(record, 'not_sent');
+  }
+  persistSPresetScriptTrace(trace, true);
+  if (spresetScriptTrace === trace) spresetScriptTrace = null;
+}
 
 function redactSPresetLogValue(value, key = '', seen = new WeakSet()) {
   const sensitive = /^(?:apikey|authorization|proxyauthorization|proxypassword|password|passwd|secret|secretid|accesstoken|refreshtoken|uploadtoken|xapikey|xauthtoken|xcsrftoken|cookie|setcookie|privatekey|userhash)$/i;
@@ -1670,7 +1834,7 @@ function redactSPresetLogValue(value, key = '', seen = new WeakSet()) {
   if (typeof value === 'string') {
     let text = value.replace(/([?&](?:key|api[_-]?key|token|access_token|secret|password)=)[^&#\s]*/gi, '$1[REDACTED]');
     text = text.replace(/(https?:\/\/)[^\s/]*@/gi, '$1[REDACTED]@');
-    if (/headers/i.test(key)) {
+    if (/headers/i.test(key) || /^\s*(?:authorization|proxy-authorization|x-api-key|api-key|cookie|x-csrf-token)\s*:/im.test(text)) {
       try { return redactSPresetLogValue(JSON.parse(text), '', seen); } catch { /* YAML/text headers */ }
       text = text.replace(/^(\s*(?:["']?)(?:authorization|proxy-authorization|x-api-key|api-key|cookie|x-csrf-token)["']?\s*:\s*).*$/gmi, '$1[REDACTED]');
     }
@@ -1772,9 +1936,11 @@ async function beginSPresetGenerationLog(input, init) {
   const settings = ctx.chatCompletionSettings || {};
   const configuration = request && typeof request === 'object'
     ? Object.fromEntries(Object.entries(request).filter(([key]) => !['messages', 'prompt', 'tools'].includes(key))) : {};
-  const record = {
-    id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    startedAt: new Date().toISOString(), endedAt: null, status: 'pending',
+  const trace = ensureSPresetScriptTrace('normal');
+  const placeholder = trace && [...trace.records].find(record => record.status === 'preparing');
+  const record = Object.assign(placeholder || {}, {
+    id: placeholder?.id || globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    startedAt: placeholder?.startedAt || new Date().toISOString(), endedAt: null, status: 'pending',
     presetName: String(settings.preset_settings_openai || ''),
     endpoint: redactSPresetLogValue(typeof input === 'string' || input instanceof URL ? String(input) : input.url),
     request: capSPresetLogValue(request),
@@ -1782,8 +1948,9 @@ async function beginSPresetGenerationLog(input, init) {
       mainApi: ctx.mainApi || ctx.main_api || '', presetName: settings.preset_settings_openai || '',
       function_calling: settings.function_calling }),
     response: null,
-  };
-  spresetGenerationLogs.push(record);
+  });
+  attachSPresetScriptTrace(record, trace);
+  if (!placeholder) spresetGenerationLogs.push(record);
   trimSPresetGenerationLogs();
   persistSPresetGenerationLog(record);
   return record;
@@ -1846,6 +2013,12 @@ function installSPresetLogFetchHook() {
   if (spresetLogFetchHookInstalled) return;
   spresetLogFetchHookInstalled = true;
   void loadSPresetGenerationLogs();
+  if (ctx.eventSource?.makeFirst) {
+    ctx.eventSource.makeFirst(ctx.eventTypes.GENERATION_STARTED, type => { ensureSPresetScriptTrace(type); });
+    for (const event of [ctx.eventTypes.GENERATION_ENDED, ctx.eventTypes.GENERATION_STOPPED]) {
+      if (event) ctx.eventSource.on(event, finishSPresetScriptGeneration);
+    }
+  }
   const originalFetch = globalThis.fetch;
   globalThis.fetch = function (...args) {
     const [input, init] = args;
@@ -1963,6 +2136,13 @@ function installSPresetOutputFetchHook() {
         args = await prepareSPresetFinalFetchArguments(input, init);
         [input, init] = args;
       } catch (error) {
+        recordSPresetScriptDiagnostic('最终请求处理', 'error', [error]);
+        if (normalizeSPresetLogUpload(SPresetSettings.LogUpload).enabled) {
+          try {
+            const record = await beginSPresetGenerationLog(input, init);
+            finishSPresetGenerationLog(record, 'script_error', error);
+          } catch { /* Preserve the original script error. */ }
+        }
         const detail = error instanceof Error ? error.message : String(error);
         console.error('[SPreset Final Request] 最终请求处理失败，已中止发送：', error);
         globalThis.toastr?.error?.(detail, 'SPreset 最终请求处理失败');
@@ -2002,6 +2182,7 @@ function installSPresetOutputFetchHook() {
           try {
             return await consumeSPresetToolCallsFromResponse(data, settings) || data;
           } catch (error) {
+            recordSPresetScriptDiagnostic('工具调用格式化/消费', 'error', [error]);
             // The parsed data object has never been modified; transformation
             // happens on a clone, so returning it restores normal ST behavior.
             console.error('[SPreset Output Preprocessing] 非流式工具调用参数消费失败，已返回原响应：', error);
@@ -3673,6 +3854,8 @@ const ChatSquash = () => {
       return target;
     }
 
+    const console = createSPresetScriptConsole('聊天记录后处理', { channel: messageArrayMode ? 'messages' : 'squashed' });
+
     const backup = messageArrayMode ? cloneSPresetData(target) : target;
     try {
       const processor = eval(settings.squashed_post_script);
@@ -3696,6 +3879,7 @@ const ChatSquash = () => {
       target.splice(0, target.length, ...processed);
       return target;
     } catch (e) {
+      recordSPresetScriptDiagnostic('聊天记录后处理', 'error', [e], { channel: messageArrayMode ? 'messages' : 'squashed' });
       console.warn(messageArrayMode ? 'Message post script processing error:' : 'Squashed post script processing error:', e);
       if (messageArrayMode) {
         target.splice(0, target.length, ...backup);
@@ -3942,6 +4126,7 @@ const ChatSquash = () => {
   }
 
   function postProcess(prompt) {
+    const console = createSPresetScriptConsole('聊天合并/正则');
     const hyperRegex = function (content, order) {
       const regexPattern =
         '<regex(?: +order *= *' +
@@ -3961,6 +4146,7 @@ const ChatSquash = () => {
             content = content.replace(replacePattern, replacement);
             console.debug('regex - \n' + content);
           } catch (e) {
+            recordSPresetScriptDiagnostic('聊天合并/正则', 'error', [e]);
             console.warn('Regex processing error:', e);
           }
         }
@@ -5793,15 +5979,17 @@ const SPRESET_TOOL_REQUIRED_KEYS = ['name', 'description', 'parameters', 'action
 const spresetToolEvaluationCache = new Map();
 const spresetToolDefinitionCache = new Map();
 
-function evaluateSPresetToolCode(code) {
+function evaluateSPresetToolCode(code, options = {}) {
   if (!code || !code.trim()) {
     return { valid: false, error: '代码不能为空', tool: null };
   }
-  const cached = spresetToolEvaluationCache.get(code);
+  const cacheKey = `${options.diagnostics ? `runtime:${options.identifier || ''}` : 'validate'}:${code}`;
+  const cached = spresetToolEvaluationCache.get(cacheKey);
   if (cached && cached.expires > Date.now()) return cached.result;
-  if (cached) spresetToolEvaluationCache.delete(code);
+  if (cached) spresetToolEvaluationCache.delete(cacheKey);
   try {
-    const tool = new Function(code)();
+    const tool = new Function('console', code)(options.diagnostics
+      ? createSPresetScriptConsole('工具绑定/执行', { ...options, dynamic: true }) : console);
     if (tool === null || tool === undefined || typeof tool !== 'object') {
       return { valid: false, error: '代码必须返回一个对象', tool: null };
     }
@@ -5822,12 +6010,13 @@ function evaluateSPresetToolCode(code) {
       return { valid: false, error: 'action 必须是函数', tool: null };
     }
     const result = { valid: true, tool };
-    spresetToolEvaluationCache.set(code, { expires: Date.now() + 1000, result });
+    spresetToolEvaluationCache.set(cacheKey, { expires: Date.now() + 1000, result });
     if (spresetToolEvaluationCache.size > 512) {
       spresetToolEvaluationCache.delete(spresetToolEvaluationCache.keys().next().value);
     }
     return result;
   } catch (e) {
+    if (options.diagnostics) recordSPresetScriptDiagnostic('工具绑定', 'error', [e], options);
     return { valid: false, error: e.message || String(e), tool: null };
   }
 }
@@ -5847,10 +6036,13 @@ function validateSPresetToolCode(code) {
  * @param {string} code
  * @returns {object|null}
  */
-function executeSPresetToolCode(code) {
-  const result = evaluateSPresetToolCode(code);
+function executeSPresetToolCode(code, identifier = '') {
+  const result = evaluateSPresetToolCode(code, { diagnostics: true, identifier });
   if (result.valid) return result.tool;
-  if (result.error) console.warn('[SPreset-ToolBinding] 执行工具代码失败:', result.error);
+  if (result.error) {
+    recordSPresetScriptDiagnostic('工具绑定', 'warn', [result.error], { identifier });
+    console.warn('[SPreset-ToolBinding] 执行工具代码失败:', result.error);
+  }
   return null;
 }
 
@@ -5996,7 +6188,7 @@ function syncSPresetToolRegistrations() {
     const cachedDefinition = binding.uuid ? spresetToolDefinitionCache.get(binding.uuid) : null;
     const toolDef = cachedDefinition?.code === binding.code
       ? cachedDefinition.toolDef
-      : executeSPresetToolCode(binding.code);
+      : executeSPresetToolCode(binding.code, identifier);
     if (!toolDef) continue;
     if (binding.uuid) {
       spresetToolDefinitionCache.set(binding.uuid, { code: binding.code, toolDef });
@@ -6005,6 +6197,7 @@ function syncSPresetToolRegistrations() {
 
     const toolId = `${toolDef.name}`;
     if (shouldRegister.has(toolId)) {
+      recordSPresetScriptDiagnostic('工具注册', 'error', [`工具名称冲突: ${toolId}`], { identifier });
       console.error(`[SPreset-ToolBinding] 工具名称冲突: ${toolId}，已保留第一个启用绑定`);
       continue;
     }
@@ -6036,14 +6229,16 @@ function syncSPresetToolRegistrations() {
         displayName: toolDef.displayName || toolDef.name,
         description: toolDef.description,
         parameters: toolDef.parameters,
-        action: toolDef.action,
-        formatMessage: toolDef.formatMessage,
+        action: wrapSPresetScriptFunction(toolDef.action, '工具执行', { identifier, dynamic: true }),
+        formatMessage: typeof toolDef.formatMessage === 'function'
+          ? wrapSPresetScriptFunction(toolDef.formatMessage, '工具显示格式化', { identifier, dynamic: true }) : toolDef.formatMessage,
         stealth: toolDef.stealth ?? false,
         shouldRegister: () => getActiveEntryIdentifiers().has(identifier),
       });
       spresetRegisteredTools.set(toolId, uuid);
       console.log(`[SPreset-ToolBinding] 已注册工具: ${toolId} (来自 ${identifier})`);
     } catch (e) {
+      recordSPresetScriptDiagnostic('工具注册', 'error', [e], { identifier });
       console.error(`[SPreset-ToolBinding] 注册工具 ${toolId} 失败:`, e);
     }
   }
