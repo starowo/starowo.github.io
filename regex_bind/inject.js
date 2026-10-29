@@ -832,7 +832,7 @@ function compileSPresetOutputPreprocessor(script, options = {}) {
   if (typeof processor !== 'function') {
     throw new TypeError('输出预处理脚本必须求值为函数');
   }
-  return processor;
+  return options.diagnostics ? wrapSPresetScriptFunction(processor, '输出预处理', options) : processor;
 }
 
 function validateSPresetOutputPreprocessing(script) {
@@ -1681,6 +1681,7 @@ let spresetGenerationLogs = [];
 let spresetLogDatabasePromise = null;
 let spresetLogLoadPromise = null;
 let spresetScriptTrace = null;
+let spresetScriptExecutionSequence = 0;
 const SPRESET_SCRIPT_LOG_MAX_EVENTS = 500;
 const SPRESET_SCRIPT_LOG_MAX_CHARS = 512 * 1024;
 
@@ -1726,21 +1727,41 @@ function serializeSPresetScriptArgument(value, depth = 0, seen = new WeakSet(), 
   if (++budget.nodes > 500) return '[TRUNCATED]';
   if (depth > 6) return '[MAX_DEPTH]';
   if (typeof value === 'string') return value.length > 8192 ? value.slice(0, 8192) + '[TRUNCATED]' : value;
-  if (typeof value === 'bigint' || typeof value === 'symbol' || typeof value === 'function') return String(value);
+  if (typeof value === 'bigint' || typeof value === 'symbol') return String(value);
+  if (typeof value === 'function') return Function.prototype.toString.call(value).slice(0, 8192);
   if (value === undefined) return '[undefined]';
   if (!value || typeof value !== 'object') return value;
   if (seen.has(value)) return '[Circular]';
   seen.add(value);
   let result;
   try {
-    if (value instanceof Error || (typeof value.message === 'string' && typeof value.stack === 'string')) {
-      result = { name: value.name, message: serializeSPresetScriptArgument(value.message, depth + 1, seen, budget), stack: String(value.stack || '').slice(0, 16384),
-        ...(value.cause !== undefined ? { cause: serializeSPresetScriptArgument(value.cause, depth + 1, seen, budget) } : {}) };
+    const ownValue = key => {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      // V8 exposes Error.stack through a native lazy getter. Read that one
+      // while leaving arbitrary user-defined accessors unexecuted.
+      if (key === 'stack' && value instanceof Error && typeof descriptor?.get === 'function'
+        && Function.prototype.toString.call(descriptor.get).includes('[native code]')) {
+        return Reflect.apply(descriptor.get, value, []);
+      }
+      return descriptor && 'value' in descriptor ? descriptor.value : undefined;
+    };
+    if (value instanceof Error || (typeof ownValue('message') === 'string' && typeof ownValue('stack') === 'string')) {
+      result = { name: ownValue('name') || Object.getOwnPropertyDescriptor(Object.getPrototypeOf(value), 'name')?.value || 'Error',
+        message: serializeSPresetScriptArgument(ownValue('message'), depth + 1, seen, budget),
+        stack: typeof ownValue('stack') === 'string' ? ownValue('stack').slice(0, 16384) : '[Unavailable]',
+        ...(ownValue('cause') !== undefined ? { cause: serializeSPresetScriptArgument(ownValue('cause'), depth + 1, seen, budget) } : {}) };
     } else if (Array.isArray(value)) {
-      result = value.slice(0, 50).map(item => serializeSPresetScriptArgument(item, depth + 1, seen, budget));
+      result = Array.from({ length: Math.min(value.length, 50) }, (_, index) => {
+        const descriptor = Object.getOwnPropertyDescriptor(value, index);
+        return descriptor && 'value' in descriptor ? serializeSPresetScriptArgument(descriptor.value, depth + 1, seen, budget) : '[Accessor or empty]';
+      });
     } else {
       result = Object.fromEntries(Object.keys(value).slice(0, 50).map(key => {
-        try { return [key, serializeSPresetScriptArgument(value[key], depth + 1, seen, budget)]; }
+        try {
+          const descriptor = Object.getOwnPropertyDescriptor(value, key);
+          return [key, descriptor && 'value' in descriptor
+            ? serializeSPresetScriptArgument(descriptor.value, depth + 1, seen, budget) : '[Accessor]'];
+        }
         catch { return [key, '[UNREADABLE]']; }
       }));
     }
@@ -1770,6 +1791,9 @@ function recordSPresetScriptDiagnostic(stage, level, args, options = {}) {
     if (!trace.records.size) ensureSPresetScriptPlaceholder(trace);
     const budget = { nodes: 0 };
     const event = redactSPresetLogValue({ timestamp: new Date().toISOString(), stage, level,
+      ...(options.event ? { event: options.event } : {}),
+      ...(options.executionId ? { executionId: options.executionId } : {}),
+      ...(typeof options.durationMs === 'number' ? { durationMs: options.durationMs } : {}),
       ...(options.identifier ? { identifier: options.identifier } : {}),
       ...(options.channel ? { channel: options.channel } : {}),
       args: args.slice(0, 8).map(value => serializeSPresetScriptArgument(value, 0, new WeakSet(), budget)) });
@@ -1809,11 +1833,26 @@ function createSPresetScriptConsole(stage, options = {}) {
 function wrapSPresetScriptFunction(processor, stage, options = {}) {
   const trace = options.dynamic ? null : options.trace || ensureSPresetScriptTrace();
   return function (...args) {
-    const invocation = { ...options, trace: trace || ensureSPresetScriptTrace() };
-    const fail = error => { recordSPresetScriptDiagnostic(stage, 'error', [error], invocation); throw error; };
+    const invocation = { ...options, trace: trace || ensureSPresetScriptTrace(),
+      executionId: `script-${++spresetScriptExecutionSequence}` };
+    const now = () => globalThis.performance?.now?.() ?? Date.now();
+    const started = now();
+    const durationMs = () => Math.max(0, Number((now() - started).toFixed(3)));
+    // Snapshot before invoking: in-place mutations must not rewrite the input log.
+    recordSPresetScriptDiagnostic(stage, 'debug', [{ parameters: args }], { ...invocation, event: 'before' });
+    const complete = result => {
+      recordSPresetScriptDiagnostic(stage, 'debug', [{ result, parametersAfter: args }],
+        { ...invocation, event: 'after', durationMs: durationMs() });
+      return result;
+    };
+    const fail = error => {
+      recordSPresetScriptDiagnostic(stage, 'error', [error, { parametersAfter: args }],
+        { ...invocation, event: 'throw', durationMs: durationMs() });
+      throw error;
+    };
     try {
       const result = processor.apply(this, args);
-      return result && typeof result.then === 'function' ? Promise.resolve(result).catch(fail) : result;
+      return result && typeof result.then === 'function' ? Promise.resolve(result).then(complete, fail) : complete(result);
     } catch (error) { return fail(error); }
   };
 }
@@ -3863,7 +3902,7 @@ const ChatSquash = () => {
         throw new TypeError('后处理脚本必须求值为函数');
       }
 
-      const processed = processor(target);
+      const processed = wrapSPresetScriptFunction(processor, '聊天记录后处理', { channel: messageArrayMode ? 'messages' : 'squashed' })(target);
       if (!messageArrayMode) {
         return processed;
       }
@@ -4186,7 +4225,7 @@ const ChatSquash = () => {
     };
     if (SPresetSettings.ChatSquash.parse_clewd) {
       console.debug('HyperPmtProcess - \n' + prompt);
-      prompt = HyperPmtProcess(prompt);
+      prompt = wrapSPresetScriptFunction(HyperPmtProcess, '聊天合并/正则')(prompt);
     }
     return runPostScript(prompt);
   }
@@ -5988,8 +6027,10 @@ function evaluateSPresetToolCode(code, options = {}) {
   if (cached && cached.expires > Date.now()) return cached.result;
   if (cached) spresetToolEvaluationCache.delete(cacheKey);
   try {
-    const tool = new Function('console', code)(options.diagnostics
+    const evaluate = () => new Function('console', code)(options.diagnostics
       ? createSPresetScriptConsole('工具绑定/执行', { ...options, dynamic: true }) : console);
+    const tool = options.diagnostics
+      ? wrapSPresetScriptFunction(evaluate, '工具绑定定义', options)() : evaluate();
     if (tool === null || tool === undefined || typeof tool !== 'object') {
       return { valid: false, error: '代码必须返回一个对象', tool: null };
     }
