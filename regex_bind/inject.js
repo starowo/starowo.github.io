@@ -38,6 +38,7 @@ let SPresetSettings = {
   FixedPresetName: '',
   ForcedPostProcessing: { enabled: false, mode: '' },
   FinalRequestProcessing: { enabled: false, script: '' },
+  LogUpload: { enabled: true, url: '' },
 };
 
 window.SPresetTempData = {};
@@ -285,6 +286,7 @@ function normalizeSPresetSettings(value) {
     FixedPresetName: normalizeSPresetFixedPresetName(source.FixedPresetName),
     ForcedPostProcessing: normalizeSPresetForcedPostProcessing(source.ForcedPostProcessing),
     FinalRequestProcessing: normalizeSPresetFinalRequestProcessing(source.FinalRequestProcessing),
+    LogUpload: normalizeSPresetLogUpload(source.LogUpload),
   };
 }
 
@@ -296,6 +298,10 @@ function normalizeSPresetForcedPostProcessing(value) {
 
 function normalizeSPresetFinalRequestProcessing(value) {
   return { enabled: Boolean(value?.enabled), script: value?.script == null ? '' : String(value.script) };
+}
+
+function normalizeSPresetLogUpload(value) {
+  return { enabled: value?.enabled !== false, url: String(value?.url ?? '').trim() };
 }
 
 let spresetEntryDecisions = null;
@@ -406,6 +412,7 @@ function getSPresetFeatures() {
     fixedPresetName: normalizeSPresetFixedPresetName(SPresetSettings.FixedPresetName),
     forcedPostProcessing: normalizeSPresetForcedPostProcessing(SPresetSettings.ForcedPostProcessing),
     finalRequestProcessing: normalizeSPresetFinalRequestProcessing(SPresetSettings.FinalRequestProcessing),
+    logUpload: normalizeSPresetLogUpload(SPresetSettings.LogUpload),
   };
 }
 
@@ -442,6 +449,7 @@ function normalizeSPresetFeatures(value, fallbackSettings = SPresetSettings) {
     fixedPresetName: normalizeSPresetFixedPresetName(fixedPresetName, fallback.FixedPresetName),
     forcedPostProcessing: normalizeSPresetForcedPostProcessing(readFeature('forcedPostProcessing', 'ForcedPostProcessing')),
     finalRequestProcessing: normalizeSPresetFinalRequestProcessing(readFeature('finalRequestProcessing', 'FinalRequestProcessing')),
+    logUpload: normalizeSPresetLogUpload(readFeature('logUpload', 'LogUpload')),
   };
 }
 
@@ -475,6 +483,12 @@ function validateSPresetFeatures(value, fallbackSettings = SPresetSettings) {
     const rawFixedPresetName = rawFeature('fixedPresetName', 'FixedPresetName');
     const rawForced = rawFeature('forcedPostProcessing', 'ForcedPostProcessing');
     const rawFinalRequest = rawFeature('finalRequestProcessing', 'FinalRequestProcessing');
+    const rawLogUpload = rawFeature('logUpload', 'LogUpload');
+    if (rawLogUpload !== undefined && !isSPresetPlainObject(rawLogUpload)) errors.push('日志上传配置必须是对象');
+    if (features.logUpload.url) {
+      try { validateSPresetLogUploadUrl(features.logUpload.url); }
+      catch (error) { errors.push(`日志上传：${error.message}`); }
+    }
     if (rawFinalRequest !== undefined && !isSPresetPlainObject(rawFinalRequest)) {
       errors.push('最终请求处理配置必须是对象');
     }
@@ -551,6 +565,7 @@ function validateSPresetFeatures(value, fallbackSettings = SPresetSettings) {
 function applySPresetFeaturesToSettings(settings, features) {
   settings.ForcedPostProcessing = normalizeSPresetForcedPostProcessing(features.forcedPostProcessing);
   settings.FinalRequestProcessing = normalizeSPresetFinalRequestProcessing(features.finalRequestProcessing);
+  settings.LogUpload = normalizeSPresetLogUpload(features.logUpload);
   settings.ChatSquash = cloneSPresetData(features.chatSquash);
   settings.MacroNest = normalizeSPresetMacroNest(features.macroNest);
   settings.RegexBinding = cloneSPresetData(features.regexBinding);
@@ -1641,10 +1656,303 @@ async function prepareSPresetFinalFetchArguments(input, init) {
   return [input, { ...init, headers, body: JSON.stringify(request) }];
 }
 
+const SPRESET_LOG_MAX_ENTRIES = 20;
+const SPRESET_LOG_MAX_FIELD = 1024 * 1024;
+const SPRESET_LOG_MAX_RECORD = 2 * 1024 * 1024;
+const SPRESET_LOG_MAX_TOTAL = 10 * 1024 * 1024;
+let spresetGenerationLogs = [];
+let spresetLogDatabasePromise = null;
+let spresetLogLoadPromise = null;
+
+function redactSPresetLogValue(value, key = '', seen = new WeakSet()) {
+  const sensitive = /^(?:apikey|authorization|proxyauthorization|proxypassword|password|passwd|secret|secretid|accesstoken|refreshtoken|uploadtoken|xapikey|xauthtoken|xcsrftoken|cookie|setcookie|privatekey|userhash)$/i;
+  if (sensitive.test(key.replace(/[-_\s]/g, ''))) return '[REDACTED]';
+  if (typeof value === 'string') {
+    let text = value.replace(/([?&](?:key|api[_-]?key|token|access_token|secret|password)=)[^&#\s]*/gi, '$1[REDACTED]');
+    text = text.replace(/(https?:\/\/)[^\s/]*@/gi, '$1[REDACTED]@');
+    if (/headers/i.test(key)) {
+      try { return redactSPresetLogValue(JSON.parse(text), '', seen); } catch { /* YAML/text headers */ }
+      text = text.replace(/^(\s*(?:["']?)(?:authorization|proxy-authorization|x-api-key|api-key|cookie|x-csrf-token)["']?\s*:\s*).*$/gmi, '$1[REDACTED]');
+    }
+    text = text.replace(/("(?:api[_-]?key|proxy_password|authorization|access_token|refresh_token|secret)"\s*:\s*")[^"\r\n]*"/gi, '$1[REDACTED]"');
+    return text.length > SPRESET_LOG_MAX_FIELD ? text.slice(0, SPRESET_LOG_MAX_FIELD) + '\n[TRUNCATED]' : text;
+  }
+  if (!value || typeof value !== 'object') return value;
+  if (seen.has(value)) return '[Circular]';
+  seen.add(value);
+  const result = Array.isArray(value)
+    ? value.map(item => redactSPresetLogValue(item, '', seen))
+    : Object.fromEntries(Object.entries(value).map(([name, item]) => [name, redactSPresetLogValue(item, name, seen)]));
+  seen.delete(value);
+  return result;
+}
+
+function capSPresetLogValue(value) {
+  const clean = redactSPresetLogValue(value);
+  const serialized = JSON.stringify(clean);
+  return serialized?.length > SPRESET_LOG_MAX_RECORD
+    ? { truncated: true, originalChars: serialized.length, preview: serialized.slice(0, SPRESET_LOG_MAX_RECORD) }
+    : clean;
+}
+
+function openSPresetLogDatabase() {
+  if (!spresetLogDatabasePromise) spresetLogDatabasePromise = new Promise(resolve => {
+    if (typeof indexedDB === 'undefined') return resolve(null);
+    try {
+      const request = indexedDB.open('SPresetGenerationLogs', 1);
+      request.onupgradeneeded = () => request.result.createObjectStore('logs', { keyPath: 'id' });
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(null);
+      request.onblocked = () => resolve(null);
+    } catch { resolve(null); }
+  });
+  return spresetLogDatabasePromise;
+}
+
+function trimSPresetGenerationLogs() {
+  spresetGenerationLogs.sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+  let size = spresetGenerationLogs.reduce((total, record) => total + JSON.stringify(record).length, 0);
+  const removed = [];
+  while (spresetGenerationLogs.length > SPRESET_LOG_MAX_ENTRIES || (size > SPRESET_LOG_MAX_TOTAL && spresetGenerationLogs.length > 1)) {
+    const record = spresetGenerationLogs.shift();
+    size -= JSON.stringify(record).length;
+    removed.push(record.id);
+  }
+  if (removed.length) void openSPresetLogDatabase().then(db => {
+    if (!db) return;
+    try {
+      const transaction = db.transaction('logs', 'readwrite');
+      removed.forEach(id => transaction.objectStore('logs').delete(id));
+    } catch { /* Memory logging still works when local storage is unavailable. */ }
+  });
+}
+
+function loadSPresetGenerationLogs() {
+  if (!spresetLogLoadPromise) spresetLogLoadPromise = openSPresetLogDatabase().then(db => new Promise(resolve => {
+    if (!db) return resolve();
+    const request = db.transaction('logs', 'readonly').objectStore('logs').getAll();
+    request.onsuccess = () => {
+      const records = new Map(request.result.map(record => [record.id,
+        record.status === 'pending' ? { ...record, status: 'interrupted' } : record]));
+      spresetGenerationLogs.forEach(record => records.set(record.id, record));
+      spresetGenerationLogs = [...records.values()];
+      trimSPresetGenerationLogs();
+      resolve();
+    };
+    request.onerror = () => resolve();
+  })).catch(() => {});
+  return spresetLogLoadPromise;
+}
+
+function persistSPresetGenerationLog(record) {
+  if (!spresetGenerationLogs.some(item => item.id === record.id)) return;
+  const snapshot = cloneSPresetData(record);
+  void openSPresetLogDatabase().then(db => {
+    if (!db || !spresetGenerationLogs.some(item => item.id === record.id)) return;
+    try { db.transaction('logs', 'readwrite').objectStore('logs').put(snapshot); }
+    catch { /* Do not interrupt generation on storage failures. */ }
+  });
+}
+
+function isSPresetGenerationLogRequest(input, init) {
+  try {
+    const url = new URL(typeof input === 'string' || input instanceof URL ? String(input) : input.url, globalThis.location.href);
+    return String(init?.method || input?.method || 'GET').toUpperCase() === 'POST'
+      && url.origin === globalThis.location.origin
+      && (/^\/api\/backends\/(?:chat-completions|text-completions|kobold)\/generate$/.test(url.pathname)
+        || url.pathname === '/api/novelai/generate');
+  } catch { return false; }
+}
+
+async function beginSPresetGenerationLog(input, init) {
+  let body = init?.body;
+  if (typeof body !== 'string' && typeof input?.clone === 'function') body = await input.clone().text();
+  let request;
+  try { request = JSON.parse(body); } catch { request = body == null ? null : String(body); }
+  const settings = ctx.chatCompletionSettings || {};
+  const configuration = request && typeof request === 'object'
+    ? Object.fromEntries(Object.entries(request).filter(([key]) => !['messages', 'prompt', 'tools'].includes(key))) : {};
+  const record = {
+    id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    startedAt: new Date().toISOString(), endedAt: null, status: 'pending',
+    presetName: String(settings.preset_settings_openai || ''),
+    endpoint: redactSPresetLogValue(typeof input === 'string' || input instanceof URL ? String(input) : input.url),
+    request: capSPresetLogValue(request),
+    apiConfig: capSPresetLogValue({ ...configuration, provider: getSPresetCurrentProvider(),
+      mainApi: ctx.mainApi || ctx.main_api || '', presetName: settings.preset_settings_openai || '',
+      function_calling: settings.function_calling }),
+    response: null,
+  };
+  spresetGenerationLogs.push(record);
+  trimSPresetGenerationLogs();
+  persistSPresetGenerationLog(record);
+  return record;
+}
+
+function finishSPresetGenerationLog(record, status, error) {
+  record.status = status;
+  record.endedAt = new Date().toISOString();
+  if (error) record.error = redactSPresetLogValue(error instanceof Error ? error.message : String(error));
+  trimSPresetGenerationLogs();
+  persistSPresetGenerationLog(record);
+}
+
+async function captureSPresetGenerationResponse(record, response, signal) {
+  if (!record) { void response.body?.cancel().catch(() => {}); return; }
+  record.response = { status: response.status, statusText: response.statusText,
+    contentType: response.headers?.get?.('content-type') || '', body: '', truncated: false };
+  let text = '';
+  try {
+    const copy = response;
+    const reader = copy.body?.getReader();
+    if (reader) {
+      const decoder = new TextDecoder();
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        const remaining = Math.max(0, SPRESET_LOG_MAX_FIELD - text.length);
+        text += chunk.slice(0, remaining);
+        if (chunk.length > remaining) record.response.truncated = true;
+      }
+      const tail = decoder.decode();
+      if (text.length + tail.length > SPRESET_LOG_MAX_FIELD) record.response.truncated = true;
+      text += tail.slice(0, Math.max(0, SPRESET_LOG_MAX_FIELD - text.length));
+    } else {
+      const body = await copy.text();
+      record.response.truncated = body.length > SPRESET_LOG_MAX_FIELD;
+      text = body.slice(0, SPRESET_LOG_MAX_FIELD);
+    }
+    let body = text;
+    try { body = JSON.parse(text); } catch {
+      if (record.response.contentType.includes('text/event-stream')) {
+        body = text.split('\n').map(line => {
+          if (!line.startsWith('data:')) return line;
+          try { return 'data: ' + JSON.stringify(redactSPresetLogValue(JSON.parse(line.slice(5)))); }
+          catch { return redactSPresetLogValue(line); }
+        }).join('\n');
+      }
+    }
+    record.response.body = capSPresetLogValue(body);
+    finishSPresetGenerationLog(record, response.ok ? 'completed' : 'http_error');
+  } catch (error) {
+    record.response.body = capSPresetLogValue(text);
+    finishSPresetGenerationLog(record, signal?.aborted ? 'aborted' : 'response_error', error);
+  }
+}
+
+let spresetLogFetchHookInstalled = false;
+function installSPresetLogFetchHook() {
+  if (spresetLogFetchHookInstalled) return;
+  spresetLogFetchHookInstalled = true;
+  void loadSPresetGenerationLogs();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = function (...args) {
+    const [input, init] = args;
+    if (!normalizeSPresetLogUpload(SPresetSettings.LogUpload).enabled || !isSPresetGenerationLogRequest(input, init)) {
+      return originalFetch.apply(this, args);
+    }
+    const pendingRecord = beginSPresetGenerationLog(input, init).catch(() => null);
+    // Capture a clone in the background: ST receives the untouched response.
+    return Promise.resolve().then(() => originalFetch.apply(this, args)).then(response => {
+      // Clone now, before returning to ST; Request-body logging can still be
+      // awaiting its own stream when the caller starts consuming the reply.
+      let copy;
+      try { copy = response.clone(); } catch { /* Non-standard Response implementation. */ }
+      void pendingRecord.then(record => {
+        if (copy) return captureSPresetGenerationResponse(record, copy, init?.signal || input?.signal);
+        if (record) finishSPresetGenerationLog(record, 'response_error', '无法复制响应内容');
+      }).catch(() => {});
+      return response;
+    }, error => {
+      void pendingRecord.then(record => {
+        if (record) finishSPresetGenerationLog(record, (init?.signal || input?.signal)?.aborted ? 'aborted' : 'network_error', error);
+      }).catch(() => {});
+      throw error;
+    });
+  };
+}
+
+function validateSPresetLogUploadUrl(value) {
+  const url = new URL(value);
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+    throw new TypeError('上传地址必须是 HTTP(S) URL，不能包含用户名密码');
+  }
+  return url.href;
+}
+
+async function uploadSPresetGenerationLogs(address, records) {
+  const url = validateSPresetLogUploadUrl(address);
+  const report = redactSPresetLogValue({ schemaVersion: 1, exportedAt: new Date().toISOString(),
+    client: { name: 'SPreset', version: String(globalThis.versionNumber || ''), presetName: String(ctx.chatCompletionSettings?.preset_settings_openai || '') },
+    records });
+  const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(report), credentials: 'omit', signal: AbortSignal.timeout(60000) });
+  if (!response.ok) throw new Error(`日志上传失败：HTTP ${response.status}`);
+  const text = await response.text();
+  let result;
+  try { result = JSON.parse(text); } catch { result = {}; }
+  return { id: result.id || '', count: records.length };
+}
+
+async function openSPresetLogUpload() {
+  await loadSPresetGenerationLogs();
+  const presetName = String(ctx.chatCompletionSettings?.preset_settings_openai || '');
+  const records = spresetGenerationLogs.filter(record => record.presetName === presetName);
+  if (!records.length) return globalThis.toastr?.info?.('当前预设还没有生成日志，请先生成一次', 'SPreset');
+  const panel = document.createElement('div');
+  const title = document.createElement('h3');
+  title.textContent = '上传 SPreset log';
+  const info = document.createElement('p');
+  info.textContent = `当前预设有 ${records.length} 条记录。将上传请求体、原始返回和 API 配置；认证信息已遮蔽。`;
+  const label = document.createElement('label');
+  label.textContent = '上传地址';
+  const input = document.createElement('input');
+  input.type = 'url'; input.className = 'text_pole'; input.style.width = '100%';
+  input.placeholder = 'https://your-server.example/api/logs';
+  input.value = normalizeSPresetLogUpload(SPresetSettings.LogUpload).url;
+  label.appendChild(input);
+  panel.append(title, info, label);
+  const accepted = await ctx.callGenericPopup(panel, ctx.POPUP_TYPE.CONFIRM, '', { okButton: '上传', cancelButton: '取消' });
+  if (!accepted) return;
+  try {
+    const result = await uploadSPresetGenerationLogs(input.value.trim(), cloneSPresetData(records));
+    globalThis.toastr?.success?.(`已上传 ${result.count} 条记录${result.id ? `，编号：${result.id}` : ''}`, 'SPreset',
+      { escapeHtml: true, timeOut: 0, extendedTimeOut: 0, closeButton: true });
+  } catch (error) {
+    globalThis.toastr?.error?.(error instanceof Error ? error.message : String(error), 'SPreset 日志上传失败', { escapeHtml: true });
+  }
+}
+
+function installSPresetLogUploadMenu() {
+  const insert = () => {
+    const menu = document.getElementById('extensionsMenu');
+    if (!menu) return false;
+    if (document.getElementById('spreset_upload_log')) return true;
+    const item = document.createElement('div');
+    item.id = 'spreset_upload_log'; item.className = 'list-group-item flex-container flexGap5 interactable';
+    item.tabIndex = 0; item.setAttribute('role', 'button');
+    const icon = document.createElement('i'); icon.className = 'fa-solid fa-cloud-arrow-up';
+    const text = document.createElement('span'); text.textContent = '上传 log';
+    item.append(icon, text);
+    item.addEventListener('click', () => { void openSPresetLogUpload().catch(error => console.error('[SPreset Log]', error)); });
+    item.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); item.click(); }
+    });
+    menu.appendChild(item);
+    return true;
+  };
+  if (!insert()) {
+    const observer = new MutationObserver(() => { if (insert()) observer.disconnect(); });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+}
+
 let spresetOutputFetchHookInstalled = false;
 function installSPresetOutputFetchHook() {
   if (spresetOutputFetchHookInstalled || typeof globalThis.fetch !== 'function') return;
   spresetOutputFetchHookInstalled = true;
+  installSPresetLogFetchHook();
   const originalFetch = globalThis.fetch;
 
   globalThis.fetch = async function (...args) {
@@ -2503,6 +2811,7 @@ $(async () => {
   installSPresetFixedPresetNameImportHook();
   installSPresetOutputPreprocessingHooks();
   injectSPresetMenu();
+  installSPresetLogUploadMenu();
   RegexBinding();
   loadSettingsToChatSquashForm = ChatSquash();
   loadSettingsToMacroNestForm = MacroNest();
@@ -2605,6 +2914,7 @@ $(async () => {
   // refresh registrations once. This avoids partial saves and repeated
   // execution of tool-definition code when the Editor saves a workspace.
   window.SPresetEditorBridge = {
+    getLogUploadSettings() { return cloneSPresetData(normalizeSPresetLogUpload(SPresetSettings.LogUpload)); },
     validateFinalRequestProcessing: validateSPresetFinalRequestProcessing,
     async previewFinalRequestProcessing(script, request) {
       return cloneSPresetData(await previewSPresetFinalRequestProcessing(script, request));
