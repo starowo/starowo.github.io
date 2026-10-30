@@ -2299,7 +2299,31 @@ async function openSPresetLogUpload() {
   const title = document.createElement('h3');
   title.textContent = '上传 SPreset log';
   const info = document.createElement('p');
-  info.textContent = `当前预设有 ${records.length} 条记录。将上传请求体、原始返回和 API 配置；认证信息已遮蔽。`;
+  info.textContent = `将上传当前预设在本机保留的 ${records.length} 条历史生成记录，可能涉及多次对话，并非只有最后一次回复。`;
+  const privacy = document.createElement('section');
+  privacy.style.cssText = 'text-align:left;border:1px solid var(--SmartThemeBorderColor,currentColor);border-radius:8px;padding:12px;margin:12px 0;line-height:1.65;';
+  const warning = document.createElement('strong');
+  warning.textContent = '隐私提醒：日志可能包含聊天记录和其他私人内容。';
+  const privacyTitle = document.createElement('p');
+  privacyTitle.textContent = '为排查问题，上传内容可能包括：';
+  const privacyList = document.createElement('ul');
+  for (const text of [
+    '聊天与提示词：请求中包含的历史聊天、你的输入、角色回复、角色设定、世界书、系统提示词和预设正文；它们可能含姓名、联系方式或其他私人信息。',
+    '生成与结构化数据：模型原始返回、思维链或推理内容、思维链签名、工具定义、工具调用参数与返回，以及请求中的图片、附件内容或链接（以实际记录为准）。',
+    'API 配置：API 来源、模型名称、请求端点、代理地址和生成参数等前端可见配置。',
+    '脚本诊断：SPreset 各类脚本的日志、报错堆栈、执行前参数、执行后结果及修改后的数据；这些快照也可能重复包含聊天、提示词或私人内容。',
+    '扩展与脚本清单：酒馆扩展的名称、版本、启用状态，以及酒馆助手全局、当前预设和当前角色卡脚本的名称、ID、文件夹及启用状态；该清单不包含助手脚本源码或变量。',
+    '身份信息：选择 Discord 登录上传时，会附上经接收服务验证的 Discord ID、用户名和显示名；匿名上传不附带该身份，但不会自动匿名化聊天内容，接收服务器仍会获知网络 IP。',
+  ]) {
+    const item = document.createElement('li'); item.textContent = text; privacyList.appendChild(item);
+  }
+  const redactionNotice = document.createElement('p');
+  redactionNotice.textContent = '脱敏有局限：程序会尝试遮蔽常见密钥、密码和认证头，但不能保证识别聊天正文、脚本输出或自定义字段中的所有敏感信息。请勿将日志视为已经完全脱敏。';
+  const recipientNotice = document.createElement('p');
+  recipientNotice.textContent = '接收与保存：日志会发送到下方由预设绑定或你填写的上传地址。接收服务及有权限的收件人可能查看、下载和保存内容，保存期限与删除方式由接收方决定；本工具无法在上传后替你撤回或保证删除。请核对地址，仅向信任的接收方上传。';
+  const consentNotice = document.createElement('p');
+  consentNotice.textContent = '仅在点击“同意并上传”后发送这些日志；取消不会上传。Discord 登录是可选操作，登录时会先与接收服务和 Discord 通信，不会因此自动上传聊天日志。';
+  privacy.append(warning, privacyTitle, privacyList, redactionNotice, recipientNotice, consentNotice);
   const label = document.createElement('label');
   label.textContent = '上传地址';
   const input = document.createElement('input');
@@ -2339,8 +2363,8 @@ async function openSPresetLogUpload() {
     discordSession = null; refreshIdentity();
   };
   refreshIdentity();
-  panel.append(title, info, label, identity, login, logout);
-  const accepted = await ctx.callGenericPopup(panel, ctx.POPUP_TYPE.CONFIRM, '', { okButton: '上传', cancelButton: '取消' });
+  panel.append(title, info, privacy, label, identity, login, logout);
+  const accepted = await ctx.callGenericPopup(panel, ctx.POPUP_TYPE.CONFIRM, '', { okButton: '同意并上传', cancelButton: '取消' });
   if (!accepted) return;
   try {
     if (loggingIn) throw new Error('Discord 仍在登录中，请等待完成后再上传');
