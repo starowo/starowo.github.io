@@ -1719,6 +1719,86 @@ function getSPresetExtensionLogSnapshot() {
     source: 'SillyTavern frontend registry', statusSource: 'configuration', entries };
 }
 
+function getSPresetTavernHelperLogSnapshot() {
+  const helper = globalThis.TavernHelper;
+  const getter = helper?.getScriptTrees || globalThis.getScriptTrees;
+  const settings = ctx.extensionSettings?.tavern_helper || ctx.extensionSettings?.TavernHelper;
+  const runtimeIds = Array.from(document.querySelectorAll('iframe[id^="TH-script--"]'), iframe => iframe.id);
+  const entries = [], scopes = [], errors = [];
+  let visited = 0;
+  for (const scope of ['global', 'preset', 'character']) {
+    let trees;
+    try {
+      trees = typeof getter === 'function' ? getter.call(helper, { type: scope })
+        : scope === 'global' ? settings?.script?.scripts : undefined;
+    } catch { errors.push(scope); }
+    if (!Array.isArray(trees)) continue;
+    scopes.push(scope);
+    const visit = (items, folder = '', parentEnabled = true, depth = 0) => {
+      if (depth > 8) return;
+      for (const item of items.slice(0, 1000)) {
+        if (++visited > 1000) break;
+        if (!item || entries.length >= 1000) continue;
+        if (item.type === 'folder') { visit(Array.isArray(item.scripts) ? item.scripts : [], String(item.name || '').slice(0, 300), parentEnabled && item.enabled === true, depth + 1); continue; }
+        const id = String(item.id || '').slice(0, 300);
+        const runtimePresent = Boolean(id && runtimeIds.some(runtime => runtime.endsWith(`--${id}`)));
+        entries.push({ id, name: String(item.name || '').slice(0, 300), scope, folder,
+          configuredEnabled: parentEnabled && item.enabled === true,
+          enabled: runtimePresent, runtimePresent });
+      }
+    };
+    visit(trees);
+  }
+  return { capturedAt: new Date().toISOString(), available: scopes.length > 0, scopes, errors,
+    statusSource: 'TH-script iframe runtime; configuredEnabled includes folder switches', entries };
+}
+
+function getSPresetLogDiscordSession(address) {
+  const origin = new URL(validateSPresetLogUploadUrl(address)).origin;
+  try {
+    const session = JSON.parse(globalThis.sessionStorage?.getItem(`SPresetLogDiscord:${origin}`) || 'null');
+    return session && typeof session.token === 'string' ? session : null;
+  } catch { return null; }
+}
+
+async function loginSPresetLogDiscord(address) {
+  const origin = new URL(validateSPresetLogUploadUrl(address)).origin;
+  // Open synchronously from the click to avoid popup blocking during OAuth setup.
+  const popup = globalThis.open('about:blank', '_blank', 'popup,width=520,height=760');
+  if (!popup) throw new Error('请允许弹出窗口后再登录 Discord');
+  try {
+    popup.opener = null;
+    const bytes = globalThis.crypto.getRandomValues(new Uint8Array(32));
+    const verifier = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+    const challenge = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+    const post = async (path, body) => {
+      const response = await fetch(origin + path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body), credentials: 'omit', signal: AbortSignal.timeout(15000) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `Discord 登录失败：HTTP ${response.status}`);
+      return data;
+    };
+    const start = await post('/api/auth/discord/start', { challenge });
+    const loginUrl = new URL(start.url);
+    if (loginUrl.origin !== origin || loginUrl.pathname !== '/auth/discord/start') throw new Error('登录地址不属于当前上传服务');
+    popup.location.href = loginUrl.href;
+    const deadline = Date.now() + 5 * 60000;
+    while (Date.now() < deadline) {
+      const result = await post('/api/auth/discord/result', { ticket: start.ticket, verifier });
+      if (!result.pending) {
+        if (typeof result.token !== 'string' || !result.user?.id) throw new Error('服务端未返回登录身份');
+        const session = { token: result.token, user: result.user };
+        try { globalThis.sessionStorage?.setItem(`SPresetLogDiscord:${origin}`, JSON.stringify(session)); } catch { /* Current upload can still use the result. */ }
+        popup.close(); return session;
+      }
+      if (popup.closed) throw new Error('Discord 登录窗口已关闭');
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    throw new Error('Discord 登录超时，请重试');
+  } catch (error) { popup.close(); throw error; }
+}
+
 function beginSPresetScriptGeneration(type = 'normal') {
   if (spresetScriptTrace) finishSPresetScriptGeneration();
   spresetScriptTrace = null;
@@ -1751,7 +1831,8 @@ function ensureSPresetScriptPlaceholder(trace) {
   if (existing) return existing;
   const record = { id: trace.id, startedAt: trace.startedAt, endedAt: null, status: 'preparing',
     presetName: trace.presetName, endpoint: null, request: null, response: null,
-    apiConfig: capSPresetLogValue({ provider: getSPresetCurrentProvider() }), extensions: getSPresetExtensionLogSnapshot() };
+    apiConfig: capSPresetLogValue({ provider: getSPresetCurrentProvider() }), extensions: getSPresetExtensionLogSnapshot(),
+    tavernHelper: getSPresetTavernHelperLogSnapshot() };
   attachSPresetScriptTrace(record, trace);
   spresetGenerationLogs.push(record);
   trimSPresetGenerationLogs();
@@ -2081,6 +2162,7 @@ async function beginSPresetGenerationLog(input, init) {
       function_calling: settings.function_calling }),
     response: null,
     extensions: getSPresetExtensionLogSnapshot(),
+    tavernHelper: getSPresetTavernHelperLogSnapshot(),
   });
   attachSPresetScriptTrace(record, trace);
   if (!placeholder) spresetGenerationLogs.push(record);
@@ -2188,14 +2270,20 @@ function validateSPresetLogUploadUrl(value) {
   return url.href;
 }
 
-async function uploadSPresetGenerationLogs(address, records) {
+async function uploadSPresetGenerationLogs(address, records, discordSession = getSPresetLogDiscordSession(address)) {
   const url = validateSPresetLogUploadUrl(address);
   const report = redactSPresetLogValue({ schemaVersion: 1, exportedAt: new Date().toISOString(),
     client: { name: 'SPreset', version: String(globalThis.versionNumber || ''), presetName: String(ctx.chatCompletionSettings?.preset_settings_openai || '') },
-    records });
-  const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    tavernHelper: getSPresetTavernHelperLogSnapshot(), records });
+  const headers = { 'Content-Type': 'application/json' };
+  if (discordSession?.token) headers.Authorization = `Bearer ${discordSession.token}`;
+  const response = await fetch(url, { method: 'POST', headers,
     body: JSON.stringify(report), credentials: 'omit', signal: AbortSignal.timeout(60000) });
-  if (!response.ok) throw new Error(`日志上传失败：HTTP ${response.status}`);
+  if (!response.ok) {
+    let detail = '';
+    try { detail = (await response.json()).error || ''; } catch { /* Generic HTTP error. */ }
+    throw new Error(`日志上传失败：${detail || `HTTP ${response.status}`}`);
+  }
   const text = await response.text();
   let result;
   try { result = JSON.parse(text); } catch { result = {}; }
@@ -2219,11 +2307,45 @@ async function openSPresetLogUpload() {
   input.placeholder = 'https://your-server.example/api/logs';
   input.value = normalizeSPresetLogUpload(SPresetSettings.LogUpload).url;
   label.appendChild(input);
-  panel.append(title, info, label);
+  const identity = document.createElement('p');
+  const login = document.createElement('button'), logout = document.createElement('button');
+  login.type = logout.type = 'button'; login.className = logout.className = 'menu_button';
+  login.textContent = 'Discord 登录（可选）'; logout.textContent = '改为匿名上传';
+  let discordSession = null, sessionOrigin = '', loggingIn = false;
+  const refreshIdentity = () => {
+    try {
+      const origin = new URL(validateSPresetLogUploadUrl(input.value.trim())).origin;
+      if (origin !== sessionOrigin) { sessionOrigin = origin; discordSession = getSPresetLogDiscordSession(input.value.trim()); }
+    } catch { sessionOrigin = ''; discordSession = null; }
+    identity.textContent = discordSession ? `上传身份：${discordSession.user.name || discordSession.user.username} · ${discordSession.user.id}` : '匿名上传；登录后将附上经过验证的 Discord ID 和名字。';
+    logout.hidden = !discordSession;
+  };
+  input.addEventListener('input', refreshIdentity);
+  login.onclick = async () => {
+    if (loggingIn) return;
+    loggingIn = true; login.disabled = true;
+    const address = input.value.trim();
+    try {
+      const session = await loginSPresetLogDiscord(address);
+      if (new URL(input.value.trim()).origin === new URL(address).origin) { sessionOrigin = new URL(address).origin; discordSession = session; }
+      refreshIdentity();
+    } catch (error) { identity.textContent = error instanceof Error ? error.message : String(error); }
+    finally { loggingIn = false; login.disabled = false; }
+  };
+  logout.onclick = () => {
+    try { globalThis.sessionStorage?.removeItem(`SPresetLogDiscord:${sessionOrigin}`); } catch { /* Storage unavailable. */ }
+    const token = discordSession?.token;
+    if (token) void fetch(sessionOrigin + '/api/auth/logout', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, credentials: 'omit' }).catch(() => {});
+    discordSession = null; refreshIdentity();
+  };
+  refreshIdentity();
+  panel.append(title, info, label, identity, login, logout);
   const accepted = await ctx.callGenericPopup(panel, ctx.POPUP_TYPE.CONFIRM, '', { okButton: '上传', cancelButton: '取消' });
   if (!accepted) return;
   try {
-    const result = await uploadSPresetGenerationLogs(input.value.trim(), cloneSPresetData(records));
+    if (loggingIn) throw new Error('Discord 仍在登录中，请等待完成后再上传');
+    refreshIdentity();
+    const result = await uploadSPresetGenerationLogs(input.value.trim(), cloneSPresetData(records), discordSession);
     globalThis.toastr?.success?.(`已上传 ${result.count} 条记录${result.id ? `，编号：${result.id}` : ''}`, 'SPreset',
       { escapeHtml: true, timeOut: 0, extendedTimeOut: 0, closeButton: true });
   } catch (error) {
