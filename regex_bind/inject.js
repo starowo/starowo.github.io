@@ -1685,6 +1685,72 @@ let spresetScriptTrace = null;
 let spresetScriptExecutionSequence = 0;
 const SPRESET_SCRIPT_LOG_MAX_EVENTS = 500;
 const SPRESET_SCRIPT_LOG_MAX_CHARS = 512 * 1024;
+const spresetBrowserConsole = { startedAt: new Date().toISOString(), events: [], chars: 0, dropped: 0 };
+let spresetBrowserConsoleInstalled = false;
+let spresetBrowserConsoleRecording = false;
+
+function recordSPresetBrowserConsole(level, args, kind = 'console', method = level) {
+  if (spresetBrowserConsoleRecording || !normalizeSPresetLogUpload(SPresetSettings.LogUpload).enabled) return;
+  spresetBrowserConsoleRecording = true;
+  try {
+    const budget = { nodes: 0 };
+    const event = redactSPresetLogValue({ timestamp: new Date().toISOString(), level, kind, method,
+      presetName: String(ctx.chatCompletionSettings?.preset_settings_openai || ''),
+      args: args.slice(0, 8).map(value => serializeSPresetScriptArgument(value, 0, new WeakSet(), budget)) });
+    const serialized = JSON.stringify(event.args);
+    if (serialized.length > 65536) event.args = [{ truncated: true, preview: serialized.slice(0, 65536) }];
+    const chars = JSON.stringify(event).length;
+    const critical = level === 'error' || level === 'warn';
+    while (spresetBrowserConsole.events.length >= 500 || spresetBrowserConsole.chars + chars > 512 * 1024) {
+      let index = spresetBrowserConsole.events.findIndex(item => item.level !== 'error' && item.level !== 'warn');
+      if (index < 0) {
+        if (!critical || !spresetBrowserConsole.events.length) { spresetBrowserConsole.dropped++; return; }
+        index = 0;
+      }
+      const [removed] = spresetBrowserConsole.events.splice(index, 1);
+      spresetBrowserConsole.chars -= JSON.stringify(removed).length;
+      spresetBrowserConsole.dropped++;
+    }
+    spresetBrowserConsole.events.push(event); spresetBrowserConsole.chars += chars;
+  } catch { /* Console capture must never affect the application or recurse. */ }
+  finally { spresetBrowserConsoleRecording = false; }
+}
+
+function getSPresetBrowserConsoleSnapshot() {
+  return cloneSPresetData({ startedAt: spresetBrowserConsole.startedAt, capturedAt: new Date().toISOString(),
+    scope: 'SillyTavern main window since SPreset initialization; current page session only',
+    enabled: normalizeSPresetLogUpload(SPresetSettings.LogUpload).enabled,
+    dropped: spresetBrowserConsole.dropped, events: spresetBrowserConsole.events });
+}
+
+function installSPresetBrowserConsoleCapture() {
+  if (spresetBrowserConsoleInstalled) return;
+  spresetBrowserConsoleInstalled = true;
+  const target = globalThis.console;
+  for (const key of ['log', 'info', 'warn', 'error', 'debug', 'table', 'trace', 'assert', 'dir', 'dirxml', 'group', 'groupCollapsed']) {
+    const original = target?.[key];
+    if (typeof original !== 'function') continue;
+    try {
+      target[key] = function (...args) {
+        if (key !== 'assert' || !args[0]) {
+          const values = key === 'trace' ? [...args.slice(0, 7), new Error('console.trace')]
+            : key === 'assert' ? [...args.slice(1, 7), new Error('Assertion failed')] : args;
+          recordSPresetBrowserConsole(key === 'assert' ? 'error' : ['warn', 'error', 'debug', 'info'].includes(key) ? key : 'log', values, 'console', key);
+        }
+        return Reflect.apply(original, target, args);
+      };
+    } catch { /* Some embedded browsers expose non-writable console methods. */ }
+  }
+  globalThis.addEventListener?.('error', event => {
+    // Resource load events have no ErrorEvent details and are not console exceptions.
+    if (typeof event.message !== 'string') return;
+    recordSPresetBrowserConsole('error', [event.error || event.message,
+      { filename: event.filename || '', line: event.lineno || 0, column: event.colno || 0 }], 'window.error');
+  });
+  globalThis.addEventListener?.('unhandledrejection', event => {
+    recordSPresetBrowserConsole('error', [event.reason], 'unhandledrejection');
+  });
+}
 
 function loadSPresetExtensionLogModule() {
   if (globalThis.SPresetExtensionLogImports) return Promise.resolve(globalThis.SPresetExtensionLogImports);
@@ -2227,6 +2293,7 @@ let spresetLogFetchHookInstalled = false;
 function installSPresetLogFetchHook() {
   if (spresetLogFetchHookInstalled) return;
   spresetLogFetchHookInstalled = true;
+  installSPresetBrowserConsoleCapture();
   void loadSPresetGenerationLogs();
   void loadSPresetExtensionLogModule();
   if (ctx.eventSource?.makeFirst) {
@@ -2274,7 +2341,7 @@ async function uploadSPresetGenerationLogs(address, records, discordSession = ge
   const url = validateSPresetLogUploadUrl(address);
   const report = redactSPresetLogValue({ schemaVersion: 1, exportedAt: new Date().toISOString(),
     client: { name: 'SPreset', version: String(globalThis.versionNumber || ''), presetName: String(ctx.chatCompletionSettings?.preset_settings_openai || '') },
-    tavernHelper: getSPresetTavernHelperLogSnapshot(), records });
+    tavernHelper: getSPresetTavernHelperLogSnapshot(), browserConsole: getSPresetBrowserConsoleSnapshot(), records });
   const headers = { 'Content-Type': 'application/json' };
   if (discordSession?.token) headers.Authorization = `Bearer ${discordSession.token}`;
   const response = await fetch(url, { method: 'POST', headers,
@@ -2312,6 +2379,7 @@ async function openSPresetLogUpload() {
     '生成与结构化数据：模型原始返回、思维链或推理内容、思维链签名、工具定义、工具调用参数与返回，以及请求中的图片、附件内容或链接（以实际记录为准）。',
     'API 配置：API 来源、模型名称、请求端点、代理地址和生成参数等前端可见配置。',
     '脚本诊断：SPreset 各类脚本的日志、报错堆栈、执行前参数、执行后结果及修改后的数据；这些快照也可能重复包含聊天、提示词或私人内容。',
+    '页面控制台：SPreset 加载后当前酒馆主页面的控制台输出、运行报错和未处理的 Promise 错误，可能包含酒馆或其他扩展打印的聊天内容、配置和调试信息；此部分不限于当前预设。',
     '扩展与脚本清单：酒馆扩展的名称、版本、启用状态，以及酒馆助手全局、当前预设和当前角色卡脚本的名称、ID、文件夹及启用状态；该清单不包含助手脚本源码或变量。',
     '身份信息：选择 Discord 登录上传时，会附上经接收服务验证的 Discord ID、用户名和显示名；匿名上传不附带该身份，但不会自动匿名化聊天内容，接收服务器仍会获知网络 IP。',
   ]) {
