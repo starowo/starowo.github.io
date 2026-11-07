@@ -3114,12 +3114,13 @@ function injectSPresetEditorButton() {
     const styleSheet = document.createElement('style');
     styleSheet.id = 'spreset-button-styles';
     styleSheet.textContent = `
-      .spreset-entry { margin: 10px 0 12px; }
+      .spreset-entry { box-sizing: border-box; width: 100%; flex: 1 1 100%; margin: 10px 0 12px; }
       .spreset-entry-btn {
         --sp-accent: #c2344a;
         --sp-border: var(--SmartThemeBorderColor, rgba(128, 128, 128, .45));
         --sp-surface: var(--SmartThemeBlurTintColor, rgba(30, 30, 34, .85));
         position: relative;
+        box-sizing: border-box;
         width: 100%;
         display: flex;
         align-items: center;
