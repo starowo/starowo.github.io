@@ -2430,14 +2430,28 @@ async function openSPresetLogUpload() {
   const records = spresetGenerationLogs.filter(record => record.presetName === presetName);
   if (!records.length) return globalThis.toastr?.info?.('当前预设还没有生成日志，请先生成一次', 'SPreset');
   const panel = document.createElement('div');
+  panel.className = 'spreset-log-upload';
+  panel.style.cssText = 'min-width:0;text-align:left;overflow-wrap:anywhere;';
   const title = document.createElement('h3');
   title.textContent = '上传 SPreset log';
+  title.style.textAlign = 'center';
   const info = document.createElement('p');
   info.textContent = `将上传当前预设在本机保留的 ${records.length} 条历史生成记录，可能涉及多次对话，并非只有最后一次回复。`;
-  const privacy = document.createElement('section');
+  const privacy = document.createElement('details');
   privacy.style.cssText = 'text-align:left;border:1px solid var(--SmartThemeBorderColor,currentColor);border-radius:8px;padding:12px;margin:12px 0;line-height:1.65;';
+  const privacySummary = document.createElement('summary');
+  privacySummary.textContent = '查看完整上传内容与隐私说明';
+  privacySummary.style.cssText = 'cursor:pointer;font-weight:600;';
+  const privacyBody = document.createElement('div');
+  privacyBody.className = 'spreset-log-upload-privacy-body';
+  privacyBody.style.cssText = 'max-height:32vh;max-height:min(32dvh,18rem);overflow-y:auto;overscroll-behavior:contain;margin-top:8px;padding-right:6px;';
+  privacyBody.tabIndex = 0;
+  privacyBody.setAttribute('role', 'region');
+  privacyBody.setAttribute('aria-label', '完整上传内容与隐私说明');
   const warning = document.createElement('strong');
   warning.textContent = '隐私提醒：日志可能包含聊天记录和其他私人内容。';
+  const warningNotice = document.createElement('p');
+  warningNotice.appendChild(warning);
   const privacyTitle = document.createElement('p');
   privacyTitle.textContent = '为排查问题，上传内容可能包括：';
   const privacyList = document.createElement('ul');
@@ -2455,21 +2469,30 @@ async function openSPresetLogUpload() {
   const redactionNotice = document.createElement('p');
   redactionNotice.textContent = '脱敏有局限：程序会尝试遮蔽常见密钥、密码和认证头，但不能保证识别聊天正文、脚本输出或自定义字段中的所有敏感信息。请勿将日志视为已经完全脱敏。';
   const recipientNotice = document.createElement('p');
-  recipientNotice.textContent = '接收与保存：日志会发送到下方由预设绑定或你填写的上传地址。接收服务及有权限的收件人可能查看、下载和保存内容，保存期限与删除方式由接收方决定；本工具无法在上传后替你撤回或保证删除。请核对地址，仅向信任的接收方上传。';
+  recipientNotice.textContent = '接收与保存：日志会发送到由预设绑定或你填写的上传地址。接收服务及有权限的收件人可能查看、下载和保存内容，保存期限与删除方式由接收方决定；本工具无法在上传后替你撤回或保证删除。请核对地址，仅向信任的接收方上传。';
   const consentNotice = document.createElement('p');
   consentNotice.textContent = '仅在点击“同意并上传”后发送这些日志；取消不会上传。Discord 登录是可选操作，登录时会先与接收服务和 Discord 通信，不会因此自动上传聊天日志。';
-  privacy.append(warning, privacyTitle, privacyList, redactionNotice, recipientNotice, consentNotice);
+  privacyBody.append(privacyTitle, privacyList, redactionNotice, recipientNotice, consentNotice);
+  privacy.append(privacySummary, privacyBody);
   const label = document.createElement('label');
   label.textContent = '上传地址';
+  label.style.cssText = 'display:block;margin:12px 0;';
   const input = document.createElement('input');
-  input.type = 'url'; input.className = 'text_pole'; input.style.width = '100%';
+  input.type = 'url'; input.className = 'text_pole';
+  input.style.cssText = 'display:block;box-sizing:border-box;min-width:0;width:100%;margin-top:6px;';
+  input.setAttribute('aria-label', '上传地址');
   input.placeholder = 'https://your-server.example/api/logs';
   input.value = normalizeSPresetLogUpload(SPresetSettings.LogUpload).url;
   label.appendChild(input);
   const identity = document.createElement('p');
+  identity.setAttribute('role', 'status');
+  identity.setAttribute('aria-live', 'polite');
   const login = document.createElement('button'), logout = document.createElement('button');
   login.type = logout.type = 'button'; login.className = logout.className = 'menu_button';
   login.textContent = 'Discord 登录（可选）'; logout.textContent = '改为匿名上传';
+  const loginControls = document.createElement('div');
+  loginControls.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;';
+  loginControls.append(login, logout);
   let discordSession = null, sessionOrigin = '', loggingIn = false;
   const refreshIdentity = () => {
     try {
@@ -2498,8 +2521,18 @@ async function openSPresetLogUpload() {
     discordSession = null; refreshIdentity();
   };
   refreshIdentity();
-  panel.append(title, info, privacy, label, identity, login, logout);
-  const accepted = await ctx.callGenericPopup(panel, ctx.POPUP_TYPE.CONFIRM, '', { okButton: '同意并上传', cancelButton: '取消' });
+  panel.append(title, info, warningNotice, label, identity, loginControls, privacy);
+  const accepted = await ctx.callGenericPopup(panel, ctx.POPUP_TYPE.CONFIRM, '', {
+    okButton: '同意并上传', cancelButton: '取消', allowVerticalScrolling: true, leftAlign: true,
+    onOpen: popup => {
+      // The native popup defaults to min-height:fit-content and clips content.
+      // Constrain only this dialog so its footer stays outside the scrolling body.
+      for (const element of [popup.dlg, popup.body, popup.content]) {
+        if (element) element.style.minHeight = '0';
+      }
+      if (popup.buttonControls) popup.buttonControls.style.flexShrink = '0';
+    },
+  });
   if (!accepted) return;
   try {
     if (loggingIn) throw new Error('Discord 仍在登录中，请等待完成后再上传');
