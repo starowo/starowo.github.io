@@ -2489,9 +2489,13 @@ async function openSPresetLogUpload() {
   identity.setAttribute('aria-live', 'polite');
   const login = document.createElement('button'), logout = document.createElement('button');
   login.type = logout.type = 'button'; login.className = logout.className = 'menu_button';
+  for (const button of [login, logout]) {
+    button.style.cssText = 'width:max-content;max-width:100%;flex:0 0 auto;white-space:normal;overflow-wrap:normal;word-break:normal;';
+  }
   login.textContent = 'Discord 登录（可选）'; logout.textContent = '改为匿名上传';
   const loginControls = document.createElement('div');
-  loginControls.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;';
+  loginControls.className = 'spreset-log-upload-login-controls';
+  loginControls.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:8px;';
   loginControls.append(login, logout);
   let discordSession = null, sessionOrigin = '', loggingIn = false;
   const refreshIdentity = () => {
@@ -2501,6 +2505,8 @@ async function openSPresetLogUpload() {
     } catch { sessionOrigin = ''; discordSession = null; }
     identity.textContent = discordSession ? `上传身份：${discordSession.user.name || discordSession.user.username} · ${discordSession.user.id}` : '匿名上传；登录后将附上经过验证的 Discord ID 和名字。';
     logout.hidden = !discordSession;
+    // Native .menu_button display:flex overrides the browser's [hidden] styling.
+    logout.style.display = discordSession ? '' : 'none';
   };
   input.addEventListener('input', refreshIdentity);
   login.onclick = async () => {
