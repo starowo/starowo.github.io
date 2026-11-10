@@ -1,3 +1,5 @@
+relaySPresetDiscordReturn();
+
 let SPresetSettings = {
   RegexBinding: {},
   ChatSquash: {
@@ -1886,6 +1888,54 @@ function getSPresetTavernHelperLogSnapshot() {
     statusSource: 'TH-script iframe runtime; configuredEnabled includes folder switches', entries };
 }
 
+function getSPresetDiscordHostWindow() {
+  try {
+    const host = globalThis.top || globalThis;
+    if (['http:', 'https:'].includes(new URL(host.location.href).protocol)) return host;
+  } catch { /* A standalone frame can use its own page. */ }
+  return globalThis;
+}
+
+function getSPresetDiscordReturnUrl() {
+  const url = new URL(getSPresetDiscordHostWindow().location.href);
+  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('请从酒馆或 HTTP(S) 页面打开资源库');
+  return url.origin + url.pathname;
+}
+
+function isSPresetDiscordCompletion(value) {
+  return value?.type === 'SPresetDiscordLibraryComplete' && typeof value.ticket === 'string'
+    && /^[A-Za-z0-9_-]{1,128}$/.test(value.ticket) && typeof value.proof === 'string'
+    && value.proof.length >= 32 && value.proof.length <= 256 && typeof value.serviceOrigin === 'string';
+}
+
+function hasSPresetPendingDiscordLogin(host, ticket, serviceOrigin) {
+  try {
+    const pending = JSON.parse(host.localStorage.getItem(`SPresetDiscordPending:${ticket}`) || 'null');
+    return pending?.serviceOrigin === serviceOrigin && /^[a-f0-9]{64}$/.test(pending.challenge)
+      && Number.isFinite(pending.expiresAt) && pending.expiresAt > Date.now();
+  } catch { return false; }
+}
+
+function relaySPresetDiscordReturn() {
+  const host = getSPresetDiscordHostWindow();
+  const url = new URL(host.location.href);
+  const prefix = '#spreset-discord-auth=';
+  if (!url.hash.startsWith(prefix)) return false;
+  host.history.replaceState(host.history.state, '', url.pathname + url.search);
+  try {
+    const completion = JSON.parse(decodeURIComponent(url.hash.slice(prefix.length)));
+    if (!isSPresetDiscordCompletion(completion) || new URL(completion.serviceOrigin).origin !== completion.serviceOrigin
+      || !/^https?:/.test(completion.serviceOrigin) || !hasSPresetPendingDiscordLogin(host, completion.ticket, completion.serviceOrigin)) return false;
+    host.localStorage.setItem(`SPresetDiscordResult:${completion.ticket}`, JSON.stringify(completion));
+    try {
+      const channel = new host.BroadcastChannel(`SPresetDiscord:${completion.ticket}`);
+      channel.postMessage(completion); channel.close();
+    } catch { /* The initiating page also polls the stored result. */ }
+    host.close();
+    return true;
+  } catch { return false; }
+}
+
 function getSPresetLogDiscordSession(address) {
   const origin = new URL(validateSPresetLogUploadUrl(address)).origin;
   try {
@@ -1896,19 +1946,28 @@ function getSPresetLogDiscordSession(address) {
 
 async function loginSPresetLogDiscord(address, options = {}) {
   const origin = new URL(validateSPresetLogUploadUrl(address)).origin;
+  const host = getSPresetDiscordHostWindow();
   // Open synchronously from the click to avoid popup blocking during OAuth setup.
-  const popup = globalThis.open('about:blank', '_blank', 'popup,width=520,height=760');
+  const popup = host.open('about:blank', '_blank', 'popup,width=520,height=760');
   if (!popup) throw new Error('请允许弹出窗口后再登录 Discord');
   let ticket = '', completionProof = '';
   const libraryLogin = options.purpose === 'library';
-  const receiveCompletion = event => {
-    const value = event.data;
-    if (event.origin === origin && event.source === popup && value?.type === 'SPresetDiscordLibraryComplete'
-      && value.ticket === ticket && typeof value.proof === 'string' && value.proof.length >= 32 && value.proof.length <= 256) {
-      completionProof = value.proof;
-    }
+  let channel = null;
+  const acceptCompletion = value => {
+    if (isSPresetDiscordCompletion(value) && value.ticket === ticket && value.serviceOrigin === origin
+      && hasSPresetPendingDiscordLogin(host, ticket, origin)) completionProof = value.proof;
   };
-  if (libraryLogin) globalThis.addEventListener('message', receiveCompletion);
+  const receiveCompletion = event => {
+    if (event.origin === origin && event.source === popup) acceptCompletion({ ...event.data, serviceOrigin: origin });
+  };
+  const readStoredCompletion = () => {
+    try { acceptCompletion(JSON.parse(host.localStorage.getItem(`SPresetDiscordResult:${ticket}`) || 'null')); }
+    catch { /* Ignore incomplete storage notifications. */ }
+  };
+  if (libraryLogin) {
+    host.addEventListener('message', receiveCompletion);
+    host.addEventListener('storage', readStoredCompletion);
+  }
   try {
     if (!libraryLogin) popup.opener = null;
     const bytes = globalThis.crypto.getRandomValues(new Uint8Array(32));
@@ -1922,13 +1981,22 @@ async function loginSPresetLogDiscord(address, options = {}) {
       if (!response.ok) throw new Error(data.error || `Discord 登录失败：HTTP ${response.status}`);
       return data;
     };
-    const start = await post('/api/auth/discord/start', { challenge, ...(options.purpose === 'library' ? { purpose: 'library' } : {}) });
+    const start = await post('/api/auth/discord/start', { challenge,
+      ...(libraryLogin ? { purpose: 'library', returnUrl: getSPresetDiscordReturnUrl() } : {}) });
     ticket = start.ticket;
+    if (libraryLogin) {
+      host.localStorage.setItem(`SPresetDiscordPending:${ticket}`, JSON.stringify({ serviceOrigin: origin, challenge, expiresAt: Date.now() + 300000 }));
+      try {
+        channel = new host.BroadcastChannel(`SPresetDiscord:${ticket}`);
+        channel.onmessage = event => acceptCompletion(event.data);
+      } catch { /* Storage events and polling provide the same result. */ }
+    }
     const loginUrl = new URL(start.url);
     if (loginUrl.origin !== origin || loginUrl.pathname !== '/auth/discord/start') throw new Error('登录地址不属于当前上传服务');
     popup.location.href = loginUrl.href;
     const deadline = Date.now() + 5 * 60000;
     while (Date.now() < deadline) {
+      if (libraryLogin) readStoredCompletion();
       const result = await post('/api/auth/discord/result', { ticket, verifier, ...(completionProof ? { completionProof } : {}) });
       if (!result.pending) {
         if (libraryLogin && !completionProof) throw new Error('未能验证 Discord 登录窗口，请重新登录');
@@ -1937,12 +2005,22 @@ async function loginSPresetLogDiscord(address, options = {}) {
         try { globalThis.sessionStorage?.setItem(`SPresetLogDiscord:${origin}`, JSON.stringify(session)); } catch { /* Current upload can still use the result. */ }
         popup.close(); return session;
       }
-      if (popup.closed) throw new Error('Discord 登录窗口已关闭');
+      if (!libraryLogin && popup.closed) throw new Error('Discord 登录窗口已关闭');
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
     throw new Error('Discord 登录超时，请重试');
   } catch (error) { popup.close(); throw error; }
-  finally { if (libraryLogin) globalThis.removeEventListener('message', receiveCompletion); }
+  finally {
+    if (libraryLogin) {
+      host.removeEventListener('message', receiveCompletion);
+      host.removeEventListener('storage', readStoredCompletion);
+      channel?.close();
+      if (ticket) {
+        host.localStorage.removeItem(`SPresetDiscordPending:${ticket}`);
+        host.localStorage.removeItem(`SPresetDiscordResult:${ticket}`);
+      }
+    }
+  }
 }
 
 function beginSPresetScriptGeneration(type = 'normal') {
