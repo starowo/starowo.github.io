@@ -1954,11 +1954,17 @@ async function loginSPresetLogDiscord(address, options = {}) {
   const libraryLogin = options.purpose === 'library';
   let channel = null;
   const acceptCompletion = value => {
-    if (isSPresetDiscordCompletion(value) && value.ticket === ticket && value.serviceOrigin === origin
-      && hasSPresetPendingDiscordLogin(host, ticket, origin)) completionProof = value.proof;
+    if (!isSPresetDiscordCompletion(value) || value.ticket !== ticket || value.serviceOrigin !== origin
+      || !hasSPresetPendingDiscordLogin(host, ticket, origin)) return false;
+    completionProof = value.proof;
+    return true;
   };
   const receiveCompletion = event => {
-    if (event.origin === origin && event.source === popup) acceptCompletion({ ...event.data, serviceOrigin: origin });
+    if (event.origin !== origin || event.source !== popup) return;
+    if (!acceptCompletion({ ...event.data, serviceOrigin: origin })) return;
+    try {
+      event.source.postMessage({ type: 'SPresetDiscordLibraryAck', ticket }, origin);
+    } catch { /* The proof is already available to the polling request. */ }
   };
   const readStoredCompletion = () => {
     try { acceptCompletion(JSON.parse(host.localStorage.getItem(`SPresetDiscordResult:${ticket}`) || 'null')); }
