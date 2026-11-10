@@ -1894,13 +1894,23 @@ function getSPresetLogDiscordSession(address) {
   } catch { return null; }
 }
 
-async function loginSPresetLogDiscord(address) {
+async function loginSPresetLogDiscord(address, options = {}) {
   const origin = new URL(validateSPresetLogUploadUrl(address)).origin;
   // Open synchronously from the click to avoid popup blocking during OAuth setup.
   const popup = globalThis.open('about:blank', '_blank', 'popup,width=520,height=760');
   if (!popup) throw new Error('请允许弹出窗口后再登录 Discord');
+  let ticket = '', completionProof = '';
+  const libraryLogin = options.purpose === 'library';
+  const receiveCompletion = event => {
+    const value = event.data;
+    if (event.origin === origin && event.source === popup && value?.type === 'SPresetDiscordLibraryComplete'
+      && value.ticket === ticket && typeof value.proof === 'string' && value.proof.length >= 32 && value.proof.length <= 256) {
+      completionProof = value.proof;
+    }
+  };
+  if (libraryLogin) globalThis.addEventListener('message', receiveCompletion);
   try {
-    popup.opener = null;
+    if (!libraryLogin) popup.opener = null;
     const bytes = globalThis.crypto.getRandomValues(new Uint8Array(32));
     const verifier = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
     const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
@@ -1912,14 +1922,16 @@ async function loginSPresetLogDiscord(address) {
       if (!response.ok) throw new Error(data.error || `Discord 登录失败：HTTP ${response.status}`);
       return data;
     };
-    const start = await post('/api/auth/discord/start', { challenge });
+    const start = await post('/api/auth/discord/start', { challenge, ...(options.purpose === 'library' ? { purpose: 'library' } : {}) });
+    ticket = start.ticket;
     const loginUrl = new URL(start.url);
     if (loginUrl.origin !== origin || loginUrl.pathname !== '/auth/discord/start') throw new Error('登录地址不属于当前上传服务');
     popup.location.href = loginUrl.href;
     const deadline = Date.now() + 5 * 60000;
     while (Date.now() < deadline) {
-      const result = await post('/api/auth/discord/result', { ticket: start.ticket, verifier });
+      const result = await post('/api/auth/discord/result', { ticket, verifier, ...(completionProof ? { completionProof } : {}) });
       if (!result.pending) {
+        if (libraryLogin && !completionProof) throw new Error('未能验证 Discord 登录窗口，请重新登录');
         if (typeof result.token !== 'string' || !result.user?.id) throw new Error('服务端未返回登录身份');
         const session = { token: result.token, user: result.user };
         try { globalThis.sessionStorage?.setItem(`SPresetLogDiscord:${origin}`, JSON.stringify(session)); } catch { /* Current upload can still use the result. */ }
@@ -1930,6 +1942,7 @@ async function loginSPresetLogDiscord(address) {
     }
     throw new Error('Discord 登录超时，请重试');
   } catch (error) { popup.close(); throw error; }
+  finally { if (libraryLogin) globalThis.removeEventListener('message', receiveCompletion); }
 }
 
 function beginSPresetScriptGeneration(type = 'normal') {
@@ -3460,6 +3473,7 @@ $(async () => {
   // refresh registrations once. This avoids partial saves and repeated
   // execution of tool-definition code when the Editor saves a workspace.
   window.SPresetEditorBridge = {
+    async loginDiscord(address, options = {}) { return loginSPresetLogDiscord(address, options); },
     getLogUploadSettings() { return cloneSPresetData(normalizeSPresetLogUpload(SPresetSettings.LogUpload)); },
     validateFinalRequestProcessing: validateSPresetFinalRequestProcessing,
     async previewFinalRequestProcessing(script, request) {
